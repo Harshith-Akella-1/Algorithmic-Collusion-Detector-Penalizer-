@@ -1,27 +1,23 @@
-import numpy as np
-from environment import BertrandCollusionEnv
+from market_env import BertrandCollusionEnv
+from stable_baselines3 import PPO
+import os
 
-def run_simulation(agent_type="competitive", steps=50):
-    env = BertrandCollusionEnv()
-    obs, _ = env.reset()
-    history = []
-
-    for _ in range(steps):
-        if agent_type == "collusive":
-            # Both agents agree to stay at a high price
-            actions = [80.0, 80.0]
-        else:
-            # Simple Rule: Undercut the opponent by 1 unit until Marginal Cost (20)
-            p1, p2 = obs
-            actions = [max(20, p1 - 1), max(20, p2 - 1)]
+def train_and_simulate(timesteps=10000):
+    # Clear old logs
+    if os.path.exists("market_tape.csv"):
+        os.remove("market_tape.csv")
         
-        obs, rewards, _, _, _ = env.step(actions)
-        history.append((actions[0], actions[1], rewards[0], rewards[1]))
+    env = BertrandCollusionEnv()
     
-    return np.array(history)
+    # We use a single policy to control both agents for this prototype
+    # In a real MARL setup, you'd use a multi-agent wrapper.
+    model = PPO("MlpPolicy", env, verbose=1)
+    
+    print("Training bots to explore the market...")
+    model.learn(total_timesteps=timesteps)
+    model.save("pricing_bot_model")
+    
+    print("Simulation complete. 'market_tape.csv' generated for the Sheriff.")
 
 if __name__ == "__main__":
-    # This part runs if you execute main.py directly
-    print("Running Competitive Simulation...")
-    comp_data = run_simulation("competitive")
-    print(f"Final Competitive Prices: {comp_data[-1, :2]}")
+    train_and_simulate()

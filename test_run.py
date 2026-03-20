@@ -1,35 +1,21 @@
 import matplotlib.pyplot as plt
-from main import run_simulation
+import pandas as pd
+from detector import run_sheriff
 
-def plot_results():
-    comp_history = run_simulation("competitive", steps=100)
-    coll_history = run_simulation("collusive", steps=100)
+def evaluate_and_plot():
+    # 1. Run Detection
+    run_sheriff()
+    
+    # 2. Plot results from the Tape
+    data = pd.read_csv("market_tape.csv", names=['p1', 'p2', 'r1', 'r2'])
 
-    plt.figure(figsize=(12, 5))
-
-    # Plot Prices
-    plt.subplot(1, 2, 1)
-    plt.plot(comp_history[:, 0], label="Competitive P1", color='blue', linestyle='--')
-    plt.plot(coll_history[:, 0], label="Collusive P1", color='red')
-    plt.axhline(y=20, color='black', label="Marginal Cost")
-    plt.title("Price Evolution: Competition vs Collusion")
-    plt.xlabel("Step")
-    plt.ylabel("Price")
+    plt.figure(figsize=(10, 4))
+    plt.plot(data['p1'], label="Agent 1 Price")
+    plt.plot(data['p2'], label="Agent 2 Price", linestyle='--')
+    plt.title("Post-Training Price Evolution")
     plt.legend()
-
-    # Plot Cumulative Rewards
-    plt.subplot(1, 2, 2)
-    plt.plot(comp_history[:, 2].cumsum(), label="Comp Profit", color='blue', linestyle='--')
-    plt.plot(coll_history[:, 2].cumsum(), label="Coll Profit", color='red')
-    plt.title("Cumulative Profit")
-    plt.xlabel("Step")
-    plt.ylabel("Total Profit")
-    plt.legend()
-
-    plt.tight_layout()
-    plt.savefig("simulation_results.png")
-    print("Graph saved as simulation_results.png. Put this in your README.")
+    plt.savefig("evaluation_results.png")
+    print("Evaluation graph saved.")
 
 if __name__ == "__main__":
-    plot_results()
-    
+    evaluate_and_plot()
