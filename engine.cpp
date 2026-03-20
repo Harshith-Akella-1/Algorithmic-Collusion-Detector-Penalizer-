@@ -2,6 +2,10 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace py = pybind11;
 
 struct Order {
     int agent_id;
@@ -59,3 +63,17 @@ private:
         if (sell.quantity > 0) sell_book.push_back(sell);
     }
 };
+
+PYBIND11_MODULE(trading_engine, m) {
+    py::class_<Order>(m, "Order")
+        .def(py::init<int, double, int, bool, long long>())
+        .def_readwrite("agent_id", &Order::agent_id)
+        .def_readwrite("price", &Order::price)
+        .def_readwrite("quantity", &Order::quantity)
+        .def_readwrite("is_buy", &Order::is_buy)
+        .def_readwrite("timestamp", &Order::timestamp);
+
+    py::class_<MatchingEngine>(m, "MatchingEngine")
+        .def(py::init<>())
+        .def("process_order", &MatchingEngine::process_order);
+}
