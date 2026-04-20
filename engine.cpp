@@ -1,79 +1,135 @@
-#include <iostream>
 #include <vector>
+#include <queue>
 #include <algorithm>
-#include <chrono>
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <pybind11/stl.h> // Required for automatic std::vector -> Python List conversion
 
 namespace py = pybind11;
+
+// Global counter to guarantee absolute price-time priority without clock collisions
+static long long global_order_id = 0;
 
 struct Order {
     int agent_id;
     double price;
     int quantity;
     bool is_buy;
-    long long timestamp;
+    long long order_id;
+};
+
+// Struct to return execution details to Python
+struct ExecutionReport {
+    int buyer_id;
+    int seller_id;
+    double price;
+    int quantity;
+};
+
+// Max-heap for Bids: Highest price first. If prices match, lowest order_id first.
+struct BuyComparator {
+    bool operator()(const Order& a, const Order& b) const {
+        if (a.price != b.price) return a.price < b.price;
+        return a.order_id > b.order_id;
+    }
+};
+
+// Min-heap for Asks: Lowest price first. If prices match, lowest order_id first.
+struct SellComparator {
+    bool operator()(const Order& a, const Order& b) const {
+        if (a.price != b.price) return a.price > b.price;
+        return a.order_id > b.order_id;
+    }
 };
 
 class MatchingEngine {
 public:
-    void process_order(Order new_order) {
-        new_order.timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        if (new_order.is_buy) match_buy(new_order);
-        else match_sell(new_order);
+    // Takes explicit primitive types instead of an Order struct from Python
+    // to streamline the Python interface. Returns a list of executions.
+    std::vector<ExecutionReport> process_order(int agent_id, double price, int quantity, bool is_buy) {
+        Order new_order = {agent_id, price, quantity, is_buy, ++global_order_id};
+        std::vector<ExecutionReport> reports;
+
+        if (is_buy) {
+            match_buy(new_order, reports);
+        } else {
+            match_sell(new_order, reports);
+        }
+       
+        return reports;
     }
 
 private:
-    std::vector<Order> buy_book;
-    std::vector<Order> sell_book;
+    std::priority_queue<Order, std::vector<Order>, BuyComparator> buy_book;
+    std::priority_queue<Order, std::vector<Order>, SellComparator> sell_book;
 
-    void match_buy(Order& buy) {
-        // Price-Time Priority: Lowest price sell orders first
-        std::sort(sell_book.begin(), sell_book.end(), [](const Order& a, const Order& b) {
-            return (a.price != b.price) ? (a.price < b.price) : (a.timestamp < b.timestamp);
-        });
+    void match_buy(Order& buy, std::vector<ExecutionReport>& reports) {
+        while (buy.quantity > 0 && !sell_book.empty()) {
+            Order top_sell = sell_book.top();
+           
+            // If the buy price is lower than the best ask, no match
+            if (buy.price < top_sell.price) break;
 
-        for (auto it = sell_book.begin(); it != sell_book.end() && buy.quantity > 0; ) {
-            if (buy.price >= it->price) {
-                int matched = std::min(buy.quantity, it->quantity);
-                std::cout << "[TRADE] Agent " << buy.agent_id << " bought from " << it->agent_id << " @ " << it->price << std::endl;
-                buy.quantity -= matched;
-                it->quantity -= matched;
-                if (it->quantity == 0) it = sell_book.erase(it); else ++it;
-            } else break;
+            // Pop top to modify it
+            sell_book.pop();
+
+            int matched_qty = std::min(buy.quantity, top_sell.quantity);
+           
+            // Trade always executes at the resting order's price (maker price)
+            reports.push_back({buy.agent_id, top_sell.agent_id, top_sell.price, matched_qty});
+
+            buy.quantity -= matched_qty;
+            top_sell.quantity -= matched_qty;
+
+            // If sell order is partially filled, push it back
+            if (top_sell.quantity > 0) {
+                sell_book.push(top_sell);
+            }
         }
-        if (buy.quantity > 0) buy_book.push_back(buy);
+        // If buy order still has quantity, add to book
+        if (buy.quantity > 0) {
+            buy_book.push(buy);
+        }
     }
 
-    void match_sell(Order& sell) {
-        // Price-Time Priority: Highest price buy orders first
-        std::sort(buy_book.begin(), buy_book.end(), [](const Order& a, const Order& b) {
-            return (a.price != b.price) ? (a.price > b.price) : (a.timestamp < b.timestamp);
-        });
+    void match_sell(Order& sell, std::vector<ExecutionReport>& reports) {
+        while (sell.quantity > 0 && !buy_book.empty()) {
+            Order top_buy = buy_book.top();
+           
+            // If the sell price is higher than the best bid, no match
+            if (sell.price > top_buy.price) break;
 
-        for (auto it = buy_book.begin(); it != buy_book.end() && sell.quantity > 0; ) {
-            if (sell.price <= it->price) {
-                int matched = std::min(sell.quantity, it->quantity);
-                std::cout << "[TRADE] Agent " << sell.agent_id << " sold to " << it->agent_id << " @ " << it->price << std::endl;
-                sell.quantity -= matched;
-                it->quantity -= matched;
-                if (it->quantity == 0) it = buy_book.erase(it); else ++it;
-            } else break;
+            // Pop top to modify it
+            buy_book.pop();
+
+            int matched_qty = std::min(sell.quantity, top_buy.quantity);
+           
+            // Trade always executes at the resting order's price (maker price)
+            reports.push_back({top_buy.agent_id, sell.agent_id, top_buy.price, matched_qty});
+
+            sell.quantity -= matched_qty;
+            top_buy.quantity -= matched_qty;
+
+            // If buy order is partially filled, push it back
+            if (top_buy.quantity > 0) {
+                buy_book.push(top_buy);
+            }
         }
-        if (sell.quantity > 0) sell_book.push_back(sell);
+        // If sell order still has quantity, add to book
+        if (sell.quantity > 0) {
+            sell_book.push(sell);
+        }
     }
 };
 
 PYBIND11_MODULE(trading_engine, m) {
-    py::class_<Order>(m, "Order")
-        .def(py::init<int, double, int, bool, long long>())
-        .def_readwrite("agent_id", &Order::agent_id)
-        .def_readwrite("price", &Order::price)
-        .def_readwrite("quantity", &Order::quantity)
-        .def_readwrite("is_buy", &Order::is_buy)
-        .def_readwrite("timestamp", &Order::timestamp);
+    py::class_<ExecutionReport>(m, "ExecutionReport")
+        .def_readonly("buyer_id", &ExecutionReport::buyer_id)
+        .def_readonly("seller_id", &ExecutionReport::seller_id)
+        .def_readonly("price", &ExecutionReport::price)
+        .def_readonly("quantity", &ExecutionReport::quantity);
 
     py::class_<MatchingEngine>(m, "MatchingEngine")
         .def(py::init<>())
-        .def("process_order", &MatchingEngine::process_order);
+        .def("process_order", &MatchingEngine::process_order,
+             py::arg("agent_id"), py::arg("price"), py::arg("quantity"), py::arg("is_buy"));
 }
