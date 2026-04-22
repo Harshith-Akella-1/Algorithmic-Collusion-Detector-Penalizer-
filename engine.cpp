@@ -121,7 +121,7 @@ private:
     }
 };
 
-PYBIND11_MODULE(trading_engine, m) {
+PYBIND11_MODULE(matching_engine_cpp, m) {
     py::class_<ExecutionReport>(m, "ExecutionReport")
         .def_readonly("buyer_id", &ExecutionReport::buyer_id)
         .def_readonly("seller_id", &ExecutionReport::seller_id)
