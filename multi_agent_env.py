@@ -8,23 +8,25 @@ from zi_bots import ZeroIntelligenceMarket
 class CollusionSandbox(ParallelEnv):
     metadata = {"render_modes": ["human"], "name": "collusion_sandbox_v0"}
 
-    def __init__(self, tick_size=0.1):
+    def __init__(self, render_mode=None, tick_size=0.1):
+        self.render_mode = render_mode  # <-- FIX: Add this line
         self.possible_agents = ["agent_1", "agent_2"]
         self.agents = self.possible_agents[:]
-        
         self.tick_size = tick_size
-        
-        # Agent IDs map to the C++ engine (1 and 2)
         self.agent_name_mapping = {"agent_1": 1, "agent_2": 2}
         
-        # 5 Discrete Actions: [Mid-2 ticks, Mid-1 tick, Mid (Hold), Mid+1 tick, Mid+2 ticks]
         self.action_spaces = {agent: Discrete(5) for agent in self.possible_agents}
-        
-        # Observation: [Mid Price, Agent Cash, Agent Inventory]
         self.observation_spaces = {
             agent: Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32) 
             for agent in self.possible_agents
         }
+
+    # FIX: Add these helper methods to satisfy PettingZoo 1.24+
+    def observation_space(self, agent):
+        return self.observation_spaces[agent]
+
+    def action_space(self, agent):
+        return self.action_spaces[agent]
 
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents[:]
@@ -36,8 +38,10 @@ class CollusionSandbox(ParallelEnv):
             "agent_2": {"cash": 1000.0, "inventory": 100}
         }
         
-        self.timestep = 0
+        # Track previous value for the reward function
+        self.prev_values = {agent: 1000.0 + (100 * 100.0) for agent in self.agents}
         
+        self.timestep = 0
         observations = {
             agent: np.array([self.zi_market.fundamental_price, self.portfolios[agent]["cash"], self.portfolios[agent]["inventory"]], dtype=np.float32)
             for agent in self.agents
@@ -85,12 +89,16 @@ class CollusionSandbox(ParallelEnv):
 
         # 3. Calculate Rewards (Change in Portfolio Value)
         # Portfolio Value = Cash + (Inventory * Mid Price)
+        # Inside the step() function, replace your reward calculation:
         rewards = {}
         for agent in self.agents:
             current_value = self.portfolios[agent]["cash"] + (self.portfolios[agent]["inventory"] * mid_price)
-            # Simplistic reward: Current absolute value. 
-            # In a real setup, track previous_value and return (current - previous)
-            rewards[agent] = float(current_value) 
+            
+            # Calculate the CHANGE in value (Profit/Loss)
+            rewards[agent] = float(current_value - self.prev_values[agent])
+            
+            # Update prev_value for the next step
+            self.prev_values[agent] = current_value
 
         # 4. Generate next observations
         observations = {

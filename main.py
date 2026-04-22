@@ -32,8 +32,8 @@ def train_colluders():
     )
 
     # 5. Training Loop
-    print("Starting training... Aiming for 1 million steps.")
-    model.learn(total_timesteps=1_000_000)
+    print("Starting training... Aiming for 100,000 steps.") # was 1 million => changed to 100k earlier
+    model.learn(total_timesteps=100_000) # was 1_000_000 earlier 
 
     # 6. Save the trained agents
     model.save("collusion_ppo_model")
