@@ -168,7 +168,7 @@ def main():
     args = parser.parse_args()
 
     print('=' * 60)
-    print('  COLLUSION DETECTOR — INFERENCE')
+    print('  COLLUSION DETECTOR -- INFERENCE')
     print('=' * 60)
     print(f'  Orders:    {args.orders}')
     print(f'  Trades:    {args.trades}')

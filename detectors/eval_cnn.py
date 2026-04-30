@@ -26,7 +26,7 @@ from train_cnn import (
     CLASSES, CLS_TO_IDX, BATCH_SIZE, SEED, DEVICE
 )
 
-CONFUSION_PNG = Path('cnn_confusion_matrix.png')
+CONFUSION_PNG = Path(__file__).resolve().parent / 'cnn_confusion_matrix.png'
 
 
 def save_confusion_matrix_png(cm, classes, macro_f1, path):
@@ -37,7 +37,7 @@ def save_confusion_matrix_png(cm, classes, macro_f1, path):
         import matplotlib.pyplot as plt
         import seaborn as sns
     except ImportError:
-        print('  [WARN] matplotlib/seaborn not installed — skipping PNG')
+        print('  [WARN] matplotlib/seaborn not installed -- skipping PNG')
         return
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -61,7 +61,7 @@ def save_confusion_matrix_png(cm, classes, macro_f1, path):
 
     ax.set_xlabel('Predicted', fontsize=12, fontweight='bold')
     ax.set_ylabel('True', fontsize=12, fontweight='bold')
-    ax.set_title(f'CNN Confusion Matrix — Macro F1 = {macro_f1:.3f}',
+    ax.set_title(f'CNN Confusion Matrix -- Macro F1 = {macro_f1:.3f}',
                  fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.savefig(path, dpi=150, bbox_inches='tight')

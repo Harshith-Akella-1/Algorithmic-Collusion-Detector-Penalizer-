@@ -40,11 +40,14 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
 # -------------------------------------------------------------------------
-# Config
+# Config (resolve paths relative to project root, not CWD)
 # -------------------------------------------------------------------------
-DATA_DIR = Path('dataset')
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+
+DATA_DIR = _PROJECT_ROOT / 'dataset'
 FEATURES_FILE = DATA_DIR / 'features.parquet'
-CHECKPOINT = Path('cnn_best.pt')
+CHECKPOINT = _SCRIPT_DIR / 'cnn_best.pt'
 
 SEQ_LEN = 200
 N_FEATURES = 6
@@ -261,7 +264,7 @@ def main():
     print('\n--- Binary view: is_collusion ---')
     print(classification_report(bin_y, bin_p, target_names=['none', 'collusion'], digits=3))
 
-    Path('cnn_history.json').write_text(json.dumps(history, indent=2))
+    (_SCRIPT_DIR / 'cnn_history.json').write_text(json.dumps(history, indent=2))
     print('\nHistory written to cnn_history.json')
 
 

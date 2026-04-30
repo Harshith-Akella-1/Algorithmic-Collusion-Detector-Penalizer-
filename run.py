@@ -38,7 +38,7 @@ def run_step(title, cmd, cwd=None, skip=False, skip_reason='', check_output=None
     if skip:
         msg = '  [SKIPPED]'
         if skip_reason:
-            msg += f' — {skip_reason}'
+            msg += f' -- {skip_reason}'
         print(msg)
         return True
 
@@ -115,9 +115,9 @@ def main():
     py = sys.executable
 
     print()
-    print('╔' + '═' * 63 + '╗')
-    print('║  ALGORITHMIC COLLUSION DETECTOR — FULL PIPELINE               ║')
-    print('╚' + '═' * 63 + '╝')
+    print('+' + '=' * 63 + '+')
+    print('|  ALGORITHMIC COLLUSION DETECTOR -- FULL PIPELINE               |')
+    print('+' + '=' * 63 + '+')
     print()
 
     # Per-step prereq check
@@ -141,7 +141,7 @@ def main():
     elif not status['dataset_full']:
         eval_reason = 'dataset/ files missing (regenerate to enable)'
 
-    print('\n  CNN checkpoint OK — proceeding.')
+    print('\n  CNN checkpoint OK -- proceeding.')
     if skip_eval:
         print(f'  eval_cnn will be skipped: {eval_reason}')
 
@@ -155,8 +155,8 @@ def main():
     steps_total += 1
     ok = run_step(
         'CNN Evaluation + Confusion Matrix',
-        [py, 'eval_cnn.py'],
-        cwd=str(PROJECT_ROOT / 'detectors'),
+        [py, str(PROJECT_ROOT / 'detectors' / 'eval_cnn.py')],
+        cwd=str(PROJECT_ROOT),
         skip=skip_eval,
         skip_reason=eval_reason,
     )
@@ -184,7 +184,7 @@ def main():
     skip_ppo_inf = not ppo_checkpoint.exists()
     steps_total += 1
     ok = run_step(
-        'RL Inference — PPO Agent',
+        'RL Inference -- PPO Agent',
         [py, 'infer_rl_episodes.py', '--agent', 'ppo'],
         skip=skip_ppo_inf,
         skip_reason='ppo_best.pt not found (train_rl.py to generate)'
@@ -206,7 +206,7 @@ def main():
         mappo_inf_reason = ''
     steps_total += 1
     ok = run_step(
-        'RL Inference — MAPPO Agents',
+        'RL Inference -- MAPPO Agents',
         [py, 'infer_rl_episodes.py', '--agent', 'mappo'],
         skip=skip_mappo_inf,
         skip_reason=mappo_inf_reason,
@@ -232,9 +232,9 @@ def main():
     # ------------------------------------------------------------------
     total_time = (time.time() - t_start) / 60
     print()
-    print('╔' + '═' * 63 + '╗')
-    print('║  PIPELINE COMPLETE                                            ║')
-    print('╚' + '═' * 63 + '╝')
+    print('+' + '=' * 63 + '+')
+    print('|  PIPELINE COMPLETE                                            |')
+    print('+' + '=' * 63 + '+')
     print(f'  Steps passed: {steps_ok}/{steps_total}')
     print(f'  Total time:   {total_time:.1f} min')
     print()
