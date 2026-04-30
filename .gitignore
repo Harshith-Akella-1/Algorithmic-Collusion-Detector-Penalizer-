@@ -11,11 +11,23 @@ __pycache__/
 *.egg-info/
 
 # Data (large files, regenerable)
-dataset/orders/
-dataset/trades/
-dataset/sequences.npy
-dataset/features.parquet
-dataset/seq_index.parquet
+dataset/
+
+# Generated outputs (regenerable by pipeline)
+collusion_evidence.png
+rl_history.json
+rl_training_curves.png
+
+# Root-level test data (legacy)
+orders*.parquet
+trades*.parquet
+label*.json
+
+# RL training outputs (regenerable)
+rl_bots/*.pt
+rl_bots/mappo_episodes/
+rl_bots/mappo_history.json
+rl_bots/mappo_training_curves.png
 
 # IDE
 .vscode/
