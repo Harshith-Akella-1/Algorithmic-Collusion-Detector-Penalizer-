@@ -1,0 +1,26 @@
+# Build artifacts
+*.o
+*.exe
+build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# Data (large files, regenerable)
+dataset/orders/
+dataset/trades/
+dataset/sequences.npy
+dataset/features.parquet
+dataset/seq_index.parquet
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
