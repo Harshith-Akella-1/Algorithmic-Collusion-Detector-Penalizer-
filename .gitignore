@@ -14,7 +14,7 @@ __pycache__/
 dataset/
 
 # Generated outputs (regenerable by pipeline)
-collusion_evidence.png
+/collusion_evidence.png
 rl_history.json
 rl_training_curves.png
 
@@ -36,3 +36,7 @@ rl_bots/mappo_training_curves.png
 # OS
 .DS_Store
 Thumbs.db
+
+# Backend (Node)
+backend/node_modules/
+backend/uploads/

@@ -14,6 +14,7 @@ Usage:
 Output: per-window predictions with class probabilities.
 """
 import argparse
+import json as json_module
 import sys
 import os
 from pathlib import Path
@@ -151,8 +152,8 @@ def main():
         description='Run collusion detection on orders+trades files')
     parser.add_argument('--orders', required=True,
                         help='Path to orders file (CSV or Parquet)')
-    parser.add_argument('--trades', required=True,
-                        help='Path to trades file (CSV or Parquet)')
+    parser.add_argument('--trades', default=None,
+                        help='Path to trades file (CSV or Parquet, optional)')
     parser.add_argument('--model', default=None,
                         help='Path to CNN checkpoint (default: detectors/cnn_best.pt)')
     parser.add_argument('--output', default=None,
@@ -165,22 +166,29 @@ def main():
                         help=f'Collusion detection threshold (default: {THRESHOLD})')
     parser.add_argument('--pair', nargs=2, default=['CA', 'CB'],
                         help='Trader pair to monitor (default: CA CB)')
+    parser.add_argument('--json', action='store_true',
+                        help='Output results as JSON (for backend integration)')
     args = parser.parse_args()
 
-    print('=' * 60)
-    print('  COLLUSION DETECTOR -- INFERENCE')
-    print('=' * 60)
-    print(f'  Orders:    {args.orders}')
-    print(f'  Trades:    {args.trades}')
-    print(f'  Window:    {args.window}s / stride {args.stride}s')
-    print(f'  Pair:      {args.pair}')
-    print(f'  Threshold: {args.threshold}')
-    print()
+    if not args.json:
+        print('=' * 60)
+        print('  COLLUSION DETECTOR -- INFERENCE')
+        print('=' * 60)
+        print(f'  Orders:    {args.orders}')
+        print(f'  Trades:    {args.trades}')
+        print(f'  Window:    {args.window}s / stride {args.stride}s')
+        print(f'  Pair:      {args.pair}')
+        print(f'  Threshold: {args.threshold}')
+        print()
 
     # Load data
     orders = load_file(args.orders)
-    trades = load_file(args.trades)
-    print(f'  Loaded {len(orders):,} orders, {len(trades):,} trades')
+    if args.trades:
+        trades = load_file(args.trades)
+    else:
+        trades = pd.DataFrame(columns=['ts', 'price', 'qty', 'buyer', 'seller'])
+    if not args.json:
+        print(f'  Loaded {len(orders):,} orders, {len(trades):,} trades')
 
     # Detect episode duration from data
     max_ts = max(orders['ts'].max(), trades['ts'].max()) if len(trades) > 0 else orders['ts'].max()
@@ -188,8 +196,9 @@ def main():
 
     # Load model
     model = load_model(args.model)
-    print(f'  Model loaded from {args.model or CHECKPOINT}')
-    print()
+    if not args.json:
+        print(f'  Model loaded from {args.model or CHECKPOINT}')
+        print()
 
     # Run inference
     df, ep_pred, ep_conf = infer_episode(
@@ -200,6 +209,31 @@ def main():
         duration=duration,
         threshold=args.threshold,
     )
+
+    n_flagged = len(df[df['collusion_score'] >= args.threshold])
+
+    # JSON output mode (for backend integration)
+    if args.json:
+        result = {
+            'episode_prediction': ep_pred,
+            'confidence': float(ep_conf),
+            'windows_total': len(df),
+            'windows_flagged': int(n_flagged),
+            'mean_collusion': float(df['collusion_score'].mean()),
+            'windows': [
+                {
+                    'start': int(row['window_start']),
+                    'end': int(row['window_end']),
+                    'predicted': row['predicted_class'],
+                    'collusion_score': float(row['collusion_score']),
+                    'confidence': float(row['confidence']),
+                    'events': int(row['n_pair_events']),
+                }
+                for _, row in df.iterrows()
+            ],
+        }
+        print(json_module.dumps(result))
+        return df, ep_pred, ep_conf
 
     # Print per-window results
     print('Per-window predictions:')
@@ -214,7 +248,6 @@ def main():
     print('-' * 90)
 
     # Episode-level summary
-    n_flagged = len(df[df['collusion_score'] >= args.threshold])
     print(f'\nEPISODE SUMMARY:')
     print(f'  Prediction:        {ep_pred}')
     print(f'  Confidence:        {ep_conf:.3f}')

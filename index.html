@@ -1,0 +1,3085 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Algo·Collusion Detector — Market Surveillance for HFT</title>
+<meta name="description" content="A dual-architecture system: reinforcement-learning agents probe the market, a 1D-CNN stands guard. Sub-second collusion detection on simulated limit-order-book data." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   THEME TOKENS
+   Two themes: "Night Trading Floor" (dark) + "Daylight Hall" (light)
+   Gold remains the constant; everything else inverts.
+   ============================================================ */
+:root[data-theme="dark"] {
+  --bg:           #0c0a08;
+  --bg-elev:      #15120e;
+  --bg-elev-2:    #1c1812;
+  --bg-deep:      #060503;
+  --border:       #2d2820;
+  --border-soft:  #1f1c16;
+  --text:         #f5efe1;
+  --text-soft:    #d6d0c2;
+  --text-muted:   #8c8579;
+  --text-dim:     #5c574d;
+  --gold:         #e9c46a;
+  --gold-bright:  #f4d976;
+  --gold-deep:    #b08a32;
+  --gold-glow:    rgba(233, 196, 106, 0.18);
+  --gold-line:    rgba(233, 196, 106, 0.32);
+  --red:          #e24a3c;
+  --red-soft:     rgba(226, 74, 60, 0.14);
+  --green:        #4cc38a;
+  --green-soft:   rgba(76, 195, 138, 0.14);
+  --noise-opacity: 0.045;
+  --vignette:     radial-gradient(ellipse at 50% 0%, rgba(233, 196, 106, 0.06), transparent 55%);
+  --shadow-1:     0 1px 2px rgba(0,0,0,0.5);
+  --shadow-2:     0 4px 24px rgba(0,0,0,0.6), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-glow:  0 0 0 1px var(--gold-line), 0 8px 40px rgba(233, 196, 106, 0.08);
+}
+
+:root[data-theme="light"] {
+  --bg:           #f6f1e3;
+  --bg-elev:      #fcf8ed;
+  --bg-elev-2:    #fffbf0;
+  --bg-deep:      #ebe4d0;
+  --border:       #cbc1a4;
+  --border-soft:  #ddd5bd;
+  --text:         #1a1410;
+  --text-soft:    #2e2820;
+  --text-muted:   #6e6557;
+  --text-dim:     #9a917f;
+  --gold:         #a07a1f;
+  --gold-bright:  #c69936;
+  --gold-deep:    #7a5b14;
+  --gold-glow:    rgba(160, 122, 31, 0.14);
+  --gold-line:    rgba(160, 122, 31, 0.36);
+  --red:          #b83231;
+  --red-soft:     rgba(184, 50, 49, 0.10);
+  --green:        #2f7a4d;
+  --green-soft:   rgba(47, 122, 77, 0.10);
+  --noise-opacity: 0.03;
+  --vignette:     radial-gradient(ellipse at 50% 0%, rgba(160, 122, 31, 0.05), transparent 55%);
+  --shadow-1:     0 1px 2px rgba(60, 45, 20, 0.08);
+  --shadow-2:     0 4px 24px rgba(60, 45, 20, 0.10), 0 1px 2px rgba(60, 45, 20, 0.06);
+  --shadow-glow:  0 0 0 1px var(--gold-line), 0 8px 40px rgba(160, 122, 31, 0.10);
+}
+
+/* Result-driven palette shift */
+:root[data-result="collusion"] {
+  --vignette: radial-gradient(ellipse at 50% 30%, var(--red-soft), transparent 60%), radial-gradient(ellipse at 50% 0%, rgba(233, 196, 106, 0.04), transparent 55%);
+}
+:root[data-result="clean"] {
+  --vignette: radial-gradient(ellipse at 50% 30%, var(--green-soft), transparent 60%), radial-gradient(ellipse at 50% 0%, rgba(233, 196, 106, 0.04), transparent 55%);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background 320ms ease, color 320ms ease;
+  overflow-x: hidden;
+}
+
+body {
+  position: relative;
+  min-height: 100vh;
+  background-image: var(--vignette);
+  transition: background-image 480ms ease, background 320ms ease, color 320ms ease;
+}
+
+/* Subtle paper grain on top of everything */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: var(--noise-opacity);
+  mix-blend-mode: overlay;
+}
+
+/* ============================================================
+   TYPOGRAPHY
+   Display: Fraunces (variable serif w/ SOFT axis)
+   Body:    IBM Plex Sans
+   Mono:    IBM Plex Mono
+   ============================================================ */
+.display, h1, h2, h3 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: "SOFT" 30, "WONK" 0, "opsz" 144;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+  font-feature-settings: "ss01", "ss02";
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+}
+.section-label .num {
+  color: var(--gold);
+  font-weight: 600;
+}
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--gold-line), transparent 80%);
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.shell {
+  position: relative;
+  z-index: 2;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+@media (max-width: 720px) {
+  .shell { padding: 0 18px; }
+}
+
+/* ============================================================
+   TICKER (top of page, decorative)
+   ============================================================ */
+.ticker-bar {
+  position: relative;
+  z-index: 5;
+  height: 32px;
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--border-soft);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.ticker-bar .ticker-tag {
+  flex-shrink: 0;
+  background: var(--gold);
+  color: var(--bg-deep);
+  font-weight: 600;
+  padding: 5px 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.ticker-track {
+  display: flex;
+  gap: 48px;
+  white-space: nowrap;
+  animation: ticker 90s linear infinite;
+  padding-left: 48px;
+}
+.ticker-track span { display: inline-flex; align-items: center; gap: 8px; }
+.ticker-track .up    { color: var(--green); }
+.ticker-track .down  { color: var(--red); }
+.ticker-track .pip   { color: var(--gold); margin: 0 8px; }
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ============================================================
+   HEADER / NAV
+   ============================================================ */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+}
+.site-header .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 68px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--text);
+}
+.brand .mark {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border: 1px solid var(--gold-line);
+  background: linear-gradient(135deg, var(--gold-glow), transparent);
+  position: relative;
+}
+.brand .mark::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--gold);
+  opacity: 0.6;
+}
+.brand .mark svg { width: 16px; height: 16px; color: var(--gold); position: relative; z-index: 2; }
+.brand .wordmark {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+.brand .wordmark .dot { color: var(--gold); }
+
+.nav-links {
+  display: flex;
+  gap: 36px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.nav-links a {
+  color: var(--text-muted);
+  text-decoration: none;
+  position: relative;
+  padding: 4px 0;
+  transition: color 180ms ease;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-links a::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 100%;
+  bottom: -2px;
+  height: 1px;
+  background: var(--gold);
+  transition: right 240ms ease;
+}
+.nav-links a:hover::after { right: 0; }
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 8px 12px 8px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+.theme-toggle:hover {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+.theme-toggle svg { width: 14px; height: 14px; }
+.theme-toggle .label-light, .theme-toggle .label-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle .label-dark { display: inline; }
+:root[data-theme="light"] .theme-toggle .label-light { display: inline; }
+:root[data-theme="dark"] .theme-toggle .icon-light { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-dark { display: none; }
+
+@media (max-width: 720px) {
+  .nav-links { display: none; }
+}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero {
+  position: relative;
+  padding: 120px 0 72px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.hero-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, var(--border-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px);
+  background-size: 64px 64px;
+  background-position: -1px -1px;
+  opacity: 0.4;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 75%);
+}
+
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 64px;
+  align-items: center;
+  position: relative;
+}
+
+@media (max-width: 980px) {
+  .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+  .hero { padding: 80px 0 56px; }
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.hero-tag::before {
+  content: '';
+  width: 24px; height: 1px;
+  background: var(--gold);
+}
+.hero-tag .pulse {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 0 var(--gold);
+  animation: pulse 2.4s infinite;
+  margin-left: 4px;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 var(--gold-glow); }
+  70%  { box-shadow: 0 0 0 12px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.hero h1 {
+  font-size: clamp(48px, 7.4vw, 104px);
+  font-weight: 400;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+  letter-spacing: -0.035em;
+  margin-bottom: 32px;
+}
+.hero h1 .em {
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "opsz" 144;
+  color: var(--gold);
+  position: relative;
+}
+.hero h1 .em::after {
+  content: '';
+  position: absolute;
+  left: -2%; right: -2%; bottom: 0.05em;
+  height: 1px;
+  background: var(--gold-line);
+}
+.hero h1 .ampersand {
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+  color: var(--gold-deep);
+  font-size: 0.92em;
+  margin: 0 0.06em;
+}
+
+.hero-lede {
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  max-width: 580px;
+  margin-bottom: 44px;
+  font-weight: 300;
+}
+.hero-lede strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.cta-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--gold);
+  color: var(--bg-deep);
+  border: none;
+  padding: 18px 28px 18px 32px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 240ms ease;
+  box-shadow: 0 8px 32px var(--gold-glow), 0 1px 2px rgba(0,0,0,0.2);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 40px var(--gold-glow), 0 1px 2px rgba(0,0,0,0.2);
+}
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.5) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 700ms ease;
+}
+.btn-primary:hover::before {
+  transform: translateX(100%);
+}
+.btn-primary svg {
+  width: 14px; height: 14px;
+  transition: transform 220ms ease;
+}
+.btn-primary:hover svg {
+  transform: translateY(2px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  padding: 18px 24px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+.btn-ghost:hover {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+/* Stats row */
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 72px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-soft);
+  gap: 0;
+}
+.hero-stat {
+  padding: 0 20px;
+  border-right: 1px solid var(--border-soft);
+  position: relative;
+}
+.hero-stat:first-child { padding-left: 0; }
+.hero-stat:last-child  { border-right: none; }
+.hero-stat .v {
+  font-family: 'Fraunces', serif;
+  font-weight: 400;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--gold);
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+.hero-stat .l {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+@media (max-width: 720px) {
+  .hero-stats { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
+  .hero-stat:nth-child(2) { border-right: none; }
+}
+
+/* Hero side panel — decorative mock terminal */
+.hero-side {
+  position: relative;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  height: 360px;
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+}
+.hero-side::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 70%, var(--bg-elev) 100%);
+}
+.hero-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-deep);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hero-side-head .dots { display: flex; gap: 6px; }
+.hero-side-head .dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-dim);
+}
+.hero-side-head .dots span:nth-child(1) { background: var(--red); opacity: 0.6; }
+.hero-side-head .dots span:nth-child(2) { background: var(--gold); opacity: 0.6; }
+.hero-side-head .dots span:nth-child(3) { background: var(--green); opacity: 0.6; }
+.hero-side-feed {
+  padding: 12px 16px;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+.hero-side-feed .row { display: flex; gap: 10px; opacity: 0; animation: feedIn 600ms ease forwards; }
+.hero-side-feed .ts { color: var(--text-dim); }
+.hero-side-feed .tag { color: var(--gold); width: 56px; }
+.hero-side-feed .tag.t-buy   { color: var(--green); }
+.hero-side-feed .tag.t-sell  { color: var(--red); }
+.hero-side-feed .tag.t-cncl  { color: var(--text-muted); }
+@keyframes feedIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+section.work {
+  padding: 96px 0;
+  position: relative;
+  border-bottom: 1px solid var(--border-soft);
+}
+section.work:last-of-type { border-bottom: none; }
+
+@media (max-width: 720px) {
+  section.work { padding: 64px 0; }
+}
+
+.section-head {
+  margin-bottom: 56px;
+}
+.section-head h2 {
+  font-size: clamp(36px, 4.4vw, 56px);
+  font-variation-settings: "SOFT" 40, "opsz" 144;
+  letter-spacing: -0.03em;
+  margin-bottom: 20px;
+  max-width: 800px;
+}
+.section-head h2 .em {
+  font-style: italic;
+  color: var(--gold);
+}
+.section-head p {
+  font-size: 17px;
+  color: var(--text-soft);
+  max-width: 640px;
+  font-weight: 300;
+}
+
+/* ============================================================
+   DEMO  (the main interactive thing)
+   ============================================================ */
+.demo {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+}
+@media (max-width: 980px) {
+  .demo { grid-template-columns: 1fr; }
+}
+
+.demo-controls {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 28px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.demo-controls::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 16px; height: 16px;
+  border-top: 1px solid var(--gold);
+  border-left: 1px solid var(--gold);
+}
+.demo-controls::after {
+  content: '';
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid var(--gold);
+  border-right: 1px solid var(--gold);
+}
+
+.control-block .control-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.scenario-chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 10px 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+.scenario-chip:hover {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+.scenario-chip.active {
+  border-color: var(--gold);
+  background: var(--gold-glow);
+  color: var(--gold);
+}
+
+.btn-initiate {
+  width: 100%;
+  background: var(--gold);
+  color: var(--bg-deep);
+  border: none;
+  padding: 18px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: filter 180ms ease, transform 180ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 8px 30px var(--gold-glow);
+}
+.btn-initiate:hover {
+  filter: brightness(1.06);
+}
+.btn-initiate:disabled {
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+  border: 1px solid var(--border);
+}
+.btn-initiate svg { width: 14px; height: 14px; }
+
+.btn-secondary {
+  width: 100%;
+  background: transparent;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+.btn-secondary:hover {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+.live-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+}
+.live-meta-cell {
+  background: var(--bg-elev);
+  padding: 14px 16px;
+}
+.live-meta-cell .l {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.live-meta-cell .v {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.state-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border-soft);
+}
+.state-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: all 240ms ease;
+}
+.state-step:last-child { border-bottom: none; }
+.state-step .num {
+  font-size: 9px;
+  color: var(--text-dim);
+  width: 16px;
+}
+.state-step .marker {
+  width: 8px; height: 8px;
+  border: 1px solid var(--text-dim);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.state-step.done .marker {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.state-step.active {
+  color: var(--gold);
+  background: var(--gold-glow);
+}
+.state-step.active .marker {
+  background: var(--gold);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px var(--gold-glow);
+  animation: stepPulse 1.4s ease-in-out infinite;
+}
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--gold-glow); }
+  50%      { box-shadow: 0 0 0 8px transparent; }
+}
+.state-step.done {
+  color: var(--text-soft);
+}
+
+/* Output panel — switches between modes */
+.demo-output {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  position: relative;
+  min-height: 560px;
+  overflow: hidden;
+}
+.demo-output::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 16px; height: 16px;
+  border-top: 1px solid var(--gold);
+  border-right: 1px solid var(--gold);
+}
+.demo-output::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid var(--gold);
+  border-left: 1px solid var(--gold);
+}
+
+.output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-deep);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.output-head .live-pip {
+  display: flex; align-items: center; gap: 8px;
+}
+.output-head .live-pip .pip {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-dim);
+}
+.output-head .live-pip.is-live .pip {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.output-stage {
+  position: relative;
+  height: 510px;
+  overflow: hidden;
+}
+
+/* idle state */
+.stage-idle {
+  position: absolute; inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+}
+.stage-idle .glyph {
+  width: 72px; height: 72px;
+  margin: 0 auto 24px;
+  border: 1px solid var(--gold-line);
+  display: grid; place-items: center;
+  position: relative;
+}
+.stage-idle .glyph::before {
+  content: ''; position: absolute; inset: -8px;
+  border: 1px solid var(--gold-line);
+  opacity: 0.3;
+}
+.stage-idle .glyph svg { width: 28px; height: 28px; color: var(--gold); }
+.stage-idle .h {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  color: var(--text);
+  font-style: italic;
+  font-variation-settings: "SOFT" 70, "opsz" 144;
+  margin-bottom: 12px;
+}
+.stage-idle .p {
+  max-width: 380px;
+  margin: 0 auto;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* trading state — scrolling order tape */
+.stage-trading {
+  position: absolute; inset: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 18px 24px;
+  overflow: hidden;
+  display: none;
+}
+.stage-trading.active { display: block; }
+.stage-trading .feed-row {
+  display: grid;
+  grid-template-columns: 80px 60px 50px 70px 60px 1fr;
+  gap: 12px;
+  padding: 2px 0;
+  opacity: 0;
+  animation: feedSlide 360ms ease-out forwards;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes feedSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stage-trading .ts   { color: var(--text-dim); }
+.stage-trading .tag  { font-weight: 500; }
+.stage-trading .tag.t-order { color: var(--gold); }
+.stage-trading .tag.t-trade { color: var(--green); }
+.stage-trading .tag.t-cncl  { color: var(--text-muted); }
+.stage-trading .actor.bot   { color: var(--gold-bright); }
+.stage-trading .px { color: var(--text); }
+.stage-trading .qty { color: var(--text-muted); }
+.stage-trading .meta { color: var(--text-dim); font-size: 11px; }
+.stage-trading .side-buy  { color: var(--green); }
+.stage-trading .side-sell { color: var(--red); }
+
+.stage-trading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, var(--bg-elev) 0%, transparent 8%, transparent 80%, var(--bg-elev) 100%);
+  pointer-events: none;
+}
+
+/* analyzing state — scanner */
+.stage-analyzing {
+  position: absolute; inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 32px;
+}
+.stage-analyzing.active { display: flex; }
+.scanner {
+  width: 80%;
+  max-width: 480px;
+  height: 220px;
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+.scanner-grid {
+  position: absolute; inset: 0;
+  background-image:
+    radial-gradient(circle at 50% 50%, var(--gold-line) 1px, transparent 1.5px);
+  background-size: 24px 24px;
+  opacity: 0.4;
+}
+.scanner-line {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, transparent, var(--gold), transparent);
+  box-shadow: 0 0 16px var(--gold), 0 0 32px var(--gold-glow);
+  animation: scan 2.4s linear infinite;
+}
+@keyframes scan {
+  0%   { left: -2%; }
+  100% { left: 102%; }
+}
+.scanner-trace {
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%; transform: translateY(-50%);
+  height: 60%;
+  pointer-events: none;
+}
+.stage-analyzing .label {
+  margin-top: 28px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.stage-analyzing .label .dots::after {
+  content: '';
+  display: inline-block;
+  width: 1ch;
+  animation: dots 1.6s steps(4, end) infinite;
+}
+@keyframes dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+.stage-analyzing .sublabel {
+  margin-top: 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 320px;
+}
+
+/* result state */
+.stage-result {
+  position: absolute; inset: 0;
+  display: none;
+  flex-direction: column;
+  padding: 36px 40px;
+  opacity: 0;
+  animation: resultFade 600ms ease-out forwards;
+}
+.stage-result.active { display: flex; }
+@keyframes resultFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.result-eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.result-eyebrow.r-collusion { color: var(--red); }
+.result-eyebrow.r-clean     { color: var(--green); }
+
+.result-headline {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(40px, 5.4vw, 68px);
+  font-variation-settings: "SOFT" 30, "opsz" 144;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 24px;
+}
+.result-headline.r-collusion { color: var(--red); }
+.result-headline.r-clean     { color: var(--green); }
+.result-headline .em {
+  font-style: italic;
+  font-variation-settings: "SOFT" 80, "opsz" 144;
+}
+
+.result-meta-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  margin-bottom: 28px;
+}
+.result-meta-cell {
+  background: var(--bg-elev);
+  padding: 14px 18px;
+}
+.result-meta-cell .l {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.result-meta-cell .v {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.result-meta-cell .v.r-collusion { color: var(--red); }
+.result-meta-cell .v.r-clean     { color: var(--green); }
+
+.confidence-bar {
+  height: 4px;
+  background: var(--bg-deep);
+  position: relative;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-soft);
+}
+.confidence-bar .fill {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 0%;
+  background: var(--gold);
+  transition: width 1200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stage-result.r-collusion .confidence-bar .fill { background: var(--red); }
+.stage-result.r-clean     .confidence-bar .fill { background: var(--green); }
+
+.result-summary {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  font-weight: 300;
+  max-width: 640px;
+  flex: 1;
+}
+
+.result-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ============================================================
+   ANALYSIS (Section 02)
+   ============================================================ */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 24px;
+}
+@media (max-width: 980px) {
+  .analysis-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 28px;
+  position: relative;
+}
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.panel-title {
+  font-family: 'Fraunces', serif;
+  font-size: 22px;
+  font-style: italic;
+  font-variation-settings: "SOFT" 60, "opsz" 144;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.panel-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.feature-list { display: flex; flex-direction: column; gap: 16px; }
+.feature-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.feature-row .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+.feature-row .body { display: flex; flex-direction: column; gap: 6px; }
+.feature-row .name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.feature-row .name .v {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.feature-bar {
+  height: 3px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-soft);
+  position: relative;
+  overflow: hidden;
+}
+.feature-bar .fill {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 0%;
+  background: linear-gradient(to right, var(--gold-deep), var(--gold));
+  transition: width 1100ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Evidence chart panel */
+.evidence-chart {
+  width: 100%;
+  height: 300px;
+  display: block;
+}
+.evidence-caption {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  font-weight: 300;
+}
+.evidence-caption .em {
+  color: var(--gold);
+  font-style: italic;
+  font-family: 'Fraunces', serif;
+}
+
+.legend-row {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.legend-row .item { display: flex; align-items: center; gap: 8px; }
+.legend-row .swatch {
+  width: 14px; height: 2px;
+  background: var(--gold);
+}
+.legend-row .swatch.dot { width: 8px; height: 8px; border-radius: 50%; }
+.legend-row .swatch.ca { background: var(--gold); }
+.legend-row .swatch.cb { background: var(--gold-deep); }
+.legend-row .swatch.win { background: var(--red); height: 8px; opacity: 0.5; }
+
+/* ============================================================
+   SCHEMES (Section 03) — collusion type cards
+   ============================================================ */
+.schemes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+@media (max-width: 980px) {
+  .schemes-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .schemes-grid { grid-template-columns: 1fr; }
+}
+
+.scheme-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 28px 24px;
+  position: relative;
+  cursor: pointer;
+  transition: all 280ms ease;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+}
+.scheme-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 24px; height: 1px;
+  background: var(--gold);
+  transition: width 320ms ease;
+}
+.scheme-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--gold-line);
+  box-shadow: var(--shadow-2);
+}
+.scheme-card:hover::before { width: 100%; }
+.scheme-card .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+}
+.scheme-card .name {
+  font-family: 'Fraunces', serif;
+  font-size: 28px;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.scheme-card .name .em {
+  font-style: italic;
+  color: var(--gold);
+}
+.scheme-card .tagline {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.scheme-card .desc {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  font-weight: 300;
+}
+.scheme-card .viz {
+  height: 80px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 16px;
+}
+.scheme-card .viz svg { width: 100%; height: 100%; }
+
+/* ============================================================
+   ARCHITECTURE (Section 04)
+   ============================================================ */
+.arch-pipeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 24px;
+  align-items: stretch;
+  margin-bottom: 48px;
+}
+@media (max-width: 980px) {
+  .arch-pipeline { grid-template-columns: 1fr; }
+  .arch-pipeline .arrow { transform: rotate(90deg); margin: 0 auto; }
+}
+
+.arch-block {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+.arch-block .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+}
+.arch-block .name {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-variation-settings: "SOFT" 40, "opsz" 144;
+  color: var(--text);
+}
+.arch-block .role {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+.arch-block .desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  font-weight: 300;
+}
+.arch-block .stack {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+.arch-block .stack span {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+}
+.arrow {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+}
+.arrow svg { width: 20px; height: 20px; }
+
+.arch-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 28px 32px;
+  flex-wrap: wrap;
+}
+.arch-cta .left { flex: 1; min-width: 280px; }
+.arch-cta .left h3 {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+  font-style: italic;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.arch-cta .left p {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+footer {
+  padding: 56px 0 40px;
+  border-top: 1px solid var(--border-soft);
+}
+.foot-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.foot-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.foot-meta .build {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.foot-stack {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.foot-stack span { padding: 4px 10px; border: 1px solid var(--border-soft); }
+
+/* ============================================================
+   SIDE DRAWER (architecture deep-dive)
+   ============================================================ */
+.fab {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 56px; height: 56px;
+  background: var(--gold);
+  color: var(--bg-deep);
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  box-shadow: 0 8px 32px var(--gold-glow), 0 4px 12px rgba(0,0,0,0.2);
+  transition: transform 220ms ease;
+}
+.fab:hover { transform: scale(1.06); }
+.fab svg { width: 22px; height: 22px; }
+.fab::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 1px solid var(--gold-line);
+  pointer-events: none;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms ease;
+  z-index: 70;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: all; }
+
+.drawer {
+  position: fixed;
+  top: 0; right: 0;
+  width: min(680px, 100vw);
+  height: 100vh;
+  background: var(--bg);
+  border-left: 1px solid var(--gold-line);
+  transform: translateX(100%);
+  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 80;
+  overflow-y: auto;
+  box-shadow: -24px 0 80px rgba(0,0,0,0.4);
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 32px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+  z-index: 2;
+}
+.drawer-head .title {
+  font-family: 'Fraunces', serif;
+  font-size: 20px;
+  font-style: italic;
+  font-variation-settings: "SOFT" 60, "opsz" 144;
+  color: var(--text);
+}
+.drawer-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 36px; height: 36px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.drawer-close:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.drawer-body { padding: 32px 32px 80px; }
+
+.drawer-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.drawer-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 12px 20px 12px 0;
+  margin-right: 28px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.drawer-tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.drawer-tab:hover:not(.active) { color: var(--text); }
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.tab-pane h4 {
+  font-family: 'Fraunces', serif;
+  font-size: 22px;
+  font-style: italic;
+  font-variation-settings: "SOFT" 60, "opsz" 144;
+  color: var(--text);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+.tab-pane p {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--text-soft);
+  font-weight: 300;
+  margin-bottom: 18px;
+}
+.tab-pane .stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  margin: 24px 0;
+}
+.tab-pane .stat-grid > div {
+  background: var(--bg-elev);
+  padding: 16px 18px;
+}
+.tab-pane .stat-grid .l {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.tab-pane .stat-grid .v {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.cnn-arch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 24px 0;
+}
+.cnn-layer {
+  display: grid;
+  grid-template-columns: 60px 1fr 100px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--border-soft);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  background: var(--bg-elev);
+}
+.cnn-layer .idx {
+  color: var(--gold);
+  letter-spacing: 0.12em;
+}
+.cnn-layer .name {
+  color: var(--text);
+  font-weight: 500;
+}
+.cnn-layer .name .meta { color: var(--text-muted); font-weight: 400; margin-left: 8px; font-size: 10.5px; }
+.cnn-layer .shape {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+/* training curves chart */
+.curve-chart {
+  width: 100%;
+  height: 220px;
+  margin: 16px 0;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+  padding: 16px;
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translate(-50%, 24px);
+  background: var(--bg-elev);
+  border: 1px solid var(--gold);
+  color: var(--text);
+  padding: 12px 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 240ms ease;
+  box-shadow: var(--shadow-glow);
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+.hidden { display: none !important; }
+.glow-text {
+  background: linear-gradient(120deg, var(--gold-deep), var(--gold-bright), var(--gold-deep));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================== TICKER ======================== -->
+<div class="ticker-bar">
+  <div class="ticker-tag">LIVE FEED</div>
+  <div class="ticker-track" id="tickerTrack">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- ======================== HEADER ======================== -->
+<header class="site-header">
+  <div class="shell row">
+    <a href="#top" class="brand" aria-label="Algo Collusion Detector — home">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M3 14l5-9 4 7 4-4 5 8" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" opacity="0.4"/>
+        </svg>
+      </div>
+      <span class="wordmark">Algo<span class="dot">·</span>Collusion <em>Detector</em></span>
+    </a>
+    <nav class="nav-links" aria-label="primary">
+      <a href="#demo">Demonstration</a>
+      <a href="#analysis">Evidence</a>
+      <a href="#schemes">Schemes</a>
+      <a href="#arch">Architecture</a>
+    </nav>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">
+      <svg class="icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-linecap="round"/></svg>
+      <span class="label-dark">Night</span>
+      <span class="label-light">Day</span>
+    </button>
+  </div>
+</header>
+
+<!-- ======================== HERO ======================== -->
+<section class="hero" id="top">
+  <div class="hero-grid"></div>
+  <div class="shell hero-inner">
+    <div class="hero-text">
+      <div class="hero-tag">
+        <span>Market Surveillance</span>
+        <span>·</span>
+        <span>HFT Intelligence</span>
+        <span class="pulse"></span>
+      </div>
+      <h1 class="display">
+        Algo<span style="color: var(--gold);">·</span>Collusion<br/>
+        <span class="em">Detector</span>
+      </h1>
+      <p class="hero-lede">
+        Detecting <strong>algorithmic market manipulation</strong> in high-frequency trading environments. A dual-architecture system: <strong>reinforcement-learning agents</strong> probe the market boundaries, while a <strong>convolutional neural network</strong> stands guard over the order tape.
+      </p>
+      <div class="cta-row">
+        <button class="btn-primary" id="ctaStart" type="button">
+          <span>Begin Simulation</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="btn-ghost" id="ctaArch" type="button">
+          <span>The Architecture</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17l10-10M7 7h10v10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="v" data-count="5000">5,000</div><div class="l">Episodes<br/>Generated</div></div>
+        <div class="hero-stat"><div class="v" data-count="95">95K+</div><div class="l">Windows<br/>Analyzed</div></div>
+        <div class="hero-stat"><div class="v">5</div><div class="l">Collusion<br/>Classes</div></div>
+        <div class="hero-stat"><div class="v">1D-CNN</div><div class="l">Detection<br/>Backbone</div></div>
+      </div>
+    </div>
+    <aside class="hero-side" aria-hidden="true">
+      <div class="hero-side-head">
+        <span>BLACKROOK · LOB v2.6</span>
+        <div class="dots"><span></span><span></span><span></span></div>
+      </div>
+      <div class="hero-side-feed mono" id="heroFeed"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ======================== DEMO ======================== -->
+<section class="work" id="demo">
+  <div class="shell">
+    <div class="section-label">
+      <span class="num">01</span><span>Demonstration</span>
+    </div>
+
+    <div class="section-head">
+      <h2>The market <span class="em">whispers</span>. The detector listens.</h2>
+      <p>Pick a scenario, initiate a 600-second high-frequency trading episode, and watch the CNN classify the order flow in real time. Each run replays a different collusion archetype against a backdrop of noise traders and a market maker.</p>
+    </div>
+
+    <div class="demo">
+      <!-- Controls column -->
+      <div class="demo-controls">
+        <div class="control-block">
+          <div class="control-title">Scenario</div>
+          <div class="scenario-grid" id="scenarioGrid">
+            <button class="scenario-chip active" data-scenario="random">Random</button>
+            <button class="scenario-chip" data-scenario="wash">Wash</button>
+            <button class="scenario-chip" data-scenario="paint">Paint</button>
+            <button class="scenario-chip" data-scenario="spoof">Spoof</button>
+            <button class="scenario-chip" data-scenario="mirror">Mirror</button>
+            <button class="scenario-chip" data-scenario="none">Clean</button>
+          </div>
+        </div>
+
+        <button class="btn-initiate" id="btnInitiate" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="btnInitiateLabel">Initiate</span>
+        </button>
+
+        <div class="control-block">
+          <div class="control-title">Pipeline State</div>
+          <div class="state-pipeline" id="statePipeline">
+            <div class="state-step" data-step="idle">     <span class="num">01</span><span class="marker"></span><span>Awaiting</span></div>
+            <div class="state-step" data-step="trading">  <span class="num">02</span><span class="marker"></span><span>Trading Active</span></div>
+            <div class="state-step" data-step="analyzing"><span class="num">03</span><span class="marker"></span><span>Detector Scanning</span></div>
+            <div class="state-step" data-step="result">   <span class="num">04</span><span class="marker"></span><span>Verdict</span></div>
+          </div>
+        </div>
+
+        <div class="control-block">
+          <div class="control-title">Live Telemetry</div>
+          <div class="live-meta">
+            <div class="live-meta-cell">
+              <div class="l">Sim Time</div>
+              <div class="v" id="meterTime">000.0s</div>
+            </div>
+            <div class="live-meta-cell">
+              <div class="l">Events</div>
+              <div class="v" id="meterEvents">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output column -->
+      <div class="demo-output" id="demoOutput">
+        <div class="output-head">
+          <span id="outputHeadLabel">/dev/lob — Trading Floor</span>
+          <span class="live-pip" id="outputLivePip"><span class="pip"></span><span>Idle</span></span>
+        </div>
+        <div class="output-stage">
+
+          <!-- IDLE -->
+          <div class="stage-idle active" id="stageIdle">
+            <div class="glyph">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 18l4-8 4 6 4-12 4 8 2-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="h">The order book stands quiet.</div>
+            <div class="p">Press <strong>Initiate</strong> to release the agents into a simulated market. The CNN watches the tape for tell-tale rhythm, depth evaporation, and cancel storms.</div>
+          </div>
+
+          <!-- TRADING -->
+          <div class="stage-trading" id="stageTrading"></div>
+
+          <!-- ANALYZING -->
+          <div class="stage-analyzing" id="stageAnalyzing">
+            <div class="scanner">
+              <div class="scanner-grid"></div>
+              <svg class="scanner-trace" viewBox="0 0 480 132" preserveAspectRatio="none" id="scannerTrace">
+                <path d="" stroke="currentColor" stroke-width="1" fill="none" opacity="0.35" style="color: var(--gold);"/>
+              </svg>
+              <div class="scanner-line"></div>
+            </div>
+            <div class="label"><span>CNN Detector Scanning</span><span class="dots"></span></div>
+            <div class="sublabel">200-event sliding window · 6 channels · 25K-parameter backbone</div>
+          </div>
+
+          <!-- RESULT -->
+          <div class="stage-result" id="stageResult">
+            <div class="result-eyebrow" id="resultEyebrow">Verdict</div>
+            <h3 class="result-headline" id="resultHeadline">—</h3>
+            <div class="result-meta-row">
+              <div class="result-meta-cell">
+                <div class="l">Predicted Class</div>
+                <div class="v" id="resultClass">—</div>
+              </div>
+              <div class="result-meta-cell">
+                <div class="l">Confidence</div>
+                <div class="v" id="resultConfidence">—</div>
+              </div>
+              <div class="result-meta-cell">
+                <div class="l">Windows Flagged</div>
+                <div class="v" id="resultWindows">—</div>
+              </div>
+            </div>
+            <div class="confidence-bar"><div class="fill" id="confidenceFill"></div></div>
+            <p class="result-summary" id="resultSummary">—</p>
+            <div class="result-actions">
+              <button class="btn-secondary" id="btnRerun" type="button">Run Another Episode</button>
+              <button class="btn-secondary" id="btnExportSummary" type="button">Copy Verdict to Clipboard</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== ANALYSIS ======================== -->
+<section class="work" id="analysis">
+  <div class="shell">
+    <div class="section-label">
+      <span class="num">02</span><span>Evidence</span>
+    </div>
+    <div class="section-head">
+      <h2>What the model <span class="em">looked at</span>.</h2>
+      <p>For each verdict, the CNN exposes the most-influential window-level features and a reconstruction of the order tape that triggered the alert. Use this view to interrogate the detector — it should never be a black box.</p>
+    </div>
+    <div class="analysis-grid">
+      <div class="panel" id="featurePanel">
+        <div class="panel-head">
+          <div class="panel-title">Top influential features</div>
+          <div class="panel-tag">Importance ↓</div>
+        </div>
+        <div class="feature-list" id="featureList">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <div class="panel" id="evidencePanel">
+        <div class="panel-head">
+          <div class="panel-title">Order-flow evidence</div>
+          <div class="panel-tag" id="evidencePanelTag">Episode reconstruction</div>
+        </div>
+        <div class="legend-row">
+          <div class="item"><span class="swatch dot ca"></span>Agent CA</div>
+          <div class="item"><span class="swatch dot cb"></span>Agent CB</div>
+          <div class="item"><span class="swatch"></span>Mid price</div>
+          <div class="item"><span class="swatch win"></span>Scheme window</div>
+        </div>
+        <svg class="evidence-chart" id="evidenceChart" viewBox="0 0 720 300" preserveAspectRatio="none"></svg>
+        <div class="evidence-caption" id="evidenceCaption">
+          Run a simulation to populate the evidence chart.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== SCHEMES ======================== -->
+<section class="work" id="schemes">
+  <div class="shell">
+    <div class="section-label">
+      <span class="num">03</span><span>Schemes</span>
+    </div>
+    <div class="section-head">
+      <h2>Four ways algorithms <span class="em">cheat</span>.</h2>
+      <p>Each scheme leaves a different fingerprint on the limit order book. The detector is trained against all four — plus a <em>none</em> baseline of legitimate noise-trader activity.</p>
+    </div>
+    <div class="schemes-grid" id="schemesGrid">
+      <!-- filled by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ======================== ARCHITECTURE ======================== -->
+<section class="work" id="arch">
+  <div class="shell">
+    <div class="section-label">
+      <span class="num">04</span><span>Architecture</span>
+    </div>
+    <div class="section-head">
+      <h2>A <span class="em">red team</span> and a <span class="em">blue team</span>, in one project.</h2>
+      <p>The simulator generates 5,000 episodes of microstructure data. Independent PPO agents act as the honest control. The 1D-CNN is the watchdog. Each piece is validated against the others.</p>
+    </div>
+
+    <div class="arch-pipeline">
+      <div class="arch-block">
+        <div class="num">01 / GENERATE</div>
+        <div class="name">C++ LOB Engine</div>
+        <div class="role">Microstructure simulator</div>
+        <div class="desc">A custom price-time-priority order book in C++14 hosts noise traders, a market maker, and a configurable colluder pair across four manipulation schemes. 600-second episodes, 0.1-second tick.</div>
+        <div class="stack"><span>C++14</span><span>STL</span><span>std::mt19937</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="arch-block">
+        <div class="num">02 / PROBE</div>
+        <div class="name">IPPO Trading Bots</div>
+        <div class="role">Adversarial validation</div>
+        <div class="desc">Two independent PPO agents trade the same book without coordination. Their behaviour serves as a sanity check: a healthy detector must classify them as <em>none</em>, even when they're profitable.</div>
+        <div class="stack"><span>PyTorch</span><span>Gymnasium</span><span>GAE-λ</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="arch-block">
+        <div class="num">03 / DETECT</div>
+        <div class="name">1D-CNN Watchdog</div>
+        <div class="role">Sub-second classifier</div>
+        <div class="desc">Two convolutional blocks over 200-event sequences with six per-event channels. Episode-level group split prevents leakage. Class-weighted cross-entropy and KL-stopped fine-tuning.</div>
+        <div class="stack"><span>PyTorch</span><span>BatchNorm</span><span>~25K params</span></div>
+      </div>
+    </div>
+
+    <div class="arch-cta">
+      <div class="left">
+        <h3>The technical deep-dive</h3>
+        <p>Explore the CNN layer-by-layer, the IPPO training curves, and the dataset breakdown that powers the detector.</p>
+      </div>
+      <button class="btn-ghost" id="btnDrawer" type="button">
+        <span>Open Architecture</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== FOOTER ======================== -->
+<footer>
+  <div class="shell foot-row">
+    <div class="foot-meta">
+      <span class="build">Algo·Collusion Detector / v0.9 / 2026</span>
+      <span>An undergraduate research project on algorithmic market integrity.</span>
+    </div>
+    <div class="foot-stack">
+      <span>C++14</span>
+      <span>Python</span>
+      <span>PyTorch</span>
+      <span>Gymnasium</span>
+      <span>NumPy</span>
+      <span>Pandas</span>
+    </div>
+  </div>
+</footer>
+
+<!-- ======================== FAB ======================== -->
+<button class="fab" id="fab" type="button" aria-label="Open architecture deep-dive">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 8v.01M12 11v5" stroke-linecap="round"/>
+  </svg>
+</button>
+
+<!-- ======================== DRAWER ======================== -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div class="title">Architecture · deep-dive</div>
+    <button class="drawer-close" id="drawerClose" aria-label="Close drawer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-tabs">
+      <button class="drawer-tab active" data-tab="cnn">CNN</button>
+      <button class="drawer-tab" data-tab="rl">RL Bots</button>
+      <button class="drawer-tab" data-tab="data">Dataset</button>
+      <button class="drawer-tab" data-tab="cpp">C++ Engine</button>
+    </div>
+
+    <div class="tab-pane active" id="tab-cnn">
+      <h4>The 1D-CNN classifier</h4>
+      <p>Two convolutional blocks over a 200-event sliding window. Each event carries six channels: normalised timestamp, signed side, log-quantity, agent identity, and one-hot order type (limit / market / cancel). Adaptive max-pool flattens the temporal axis, two dense layers produce class logits.</p>
+      <div class="cnn-arch">
+        <div class="cnn-layer"><span class="idx">L01</span><span class="name">Input <span class="meta">events × channels</span></span><span class="shape">[200, 6]</span></div>
+        <div class="cnn-layer"><span class="idx">L02</span><span class="name">Conv1d <span class="meta">kernel 5, pad 2</span></span><span class="shape">[200, 32]</span></div>
+        <div class="cnn-layer"><span class="idx">L03</span><span class="name">BatchNorm + ReLU</span><span class="shape">[200, 32]</span></div>
+        <div class="cnn-layer"><span class="idx">L04</span><span class="name">MaxPool ÷2</span><span class="shape">[100, 32]</span></div>
+        <div class="cnn-layer"><span class="idx">L05</span><span class="name">Dropout p=0.2</span><span class="shape">[100, 32]</span></div>
+        <div class="cnn-layer"><span class="idx">L06</span><span class="name">Conv1d <span class="meta">kernel 5, pad 2</span></span><span class="shape">[100, 64]</span></div>
+        <div class="cnn-layer"><span class="idx">L07</span><span class="name">BatchNorm + ReLU</span><span class="shape">[100, 64]</span></div>
+        <div class="cnn-layer"><span class="idx">L08</span><span class="name">AdaptiveMaxPool</span><span class="shape">[1, 64]</span></div>
+        <div class="cnn-layer"><span class="idx">L09</span><span class="name">Linear → ReLU</span><span class="shape">[64]</span></div>
+        <div class="cnn-layer"><span class="idx">L10</span><span class="name">Dropout p=0.3 → Linear</span><span class="shape">[5]</span></div>
+      </div>
+      <div class="stat-grid">
+        <div><div class="l">Parameters</div><div class="v">~25,000</div></div>
+        <div><div class="l">Inference</div><div class="v">&lt; 50 ms</div></div>
+        <div><div class="l">Window</div><div class="v">60 s / 30 s stride</div></div>
+        <div><div class="l">Classes</div><div class="v">5</div></div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="tab-rl">
+      <h4>IPPO — independent PPO agents</h4>
+      <p>Two PPO agents trade the same limit order book without communication or shared state. Each owns its own actor and critic; rewards are pure mark-to-market. The training run below is one of two co-trained agents — the other curve looks the same.</p>
+      <svg class="curve-chart" id="curveChart" viewBox="0 0 600 220"></svg>
+      <div class="stat-grid">
+        <div><div class="l">Iterations</div><div class="v">300</div></div>
+        <div><div class="l">Rollout steps</div><div class="v">4,800</div></div>
+        <div><div class="l">Best eval reward</div><div class="v">A=6.57 · B=4.63</div></div>
+        <div><div class="l">Total wall-time</div><div class="v">≈ 123 min</div></div>
+      </div>
+      <p>Behaviour cross-validation: post-training episodes from both agents are fed to the CNN. The detector reports <strong>none</strong> on every window — confirming the watchdog does not false-positive on legitimate, profitable RL agents.</p>
+    </div>
+
+    <div class="tab-pane" id="tab-data">
+      <h4>The dataset</h4>
+      <p>5,000 simulated episodes of 600 seconds each, evenly distributed across one clean class and four collusion archetypes. Window-level labelling: a 60-second window is positive only if the labelled scheme period covers ≥ 25% of it.</p>
+      <div class="stat-grid">
+        <div><div class="l">Episodes</div><div class="v">5,000</div></div>
+        <div><div class="l">Windows</div><div class="v">95,000+</div></div>
+        <div><div class="l">Avg. orders / ep</div><div class="v">≈ 6,000</div></div>
+        <div><div class="l">Avg. trades / ep</div><div class="v">≈ 700</div></div>
+        <div><div class="l">Tick interval</div><div class="v">0.1 s</div></div>
+        <div><div class="l">Episode duration</div><div class="v">600 s</div></div>
+      </div>
+      <p>Class balance is even at the episode level. Within colluding episodes, only the windows overlapping the scheme are labelled positive — so the same episode contributes both positive and negative training samples. Splits are <strong>episode-level</strong>: no window from a given episode appears in more than one of train / val / test.</p>
+    </div>
+
+    <div class="tab-pane" id="tab-cpp">
+      <h4>The C++ engine</h4>
+      <p>A direct port of the Python reference simulator into C++14, used for fast batch generation. The price-time-priority matching engine, the noise-trader and market-maker logic, and the four colluder schemes are all reimplemented in a single binary.</p>
+      <div class="stat-grid">
+        <div><div class="l">Standard</div><div class="v">C++14</div></div>
+        <div><div class="l">Build</div><div class="v">g++ -O2</div></div>
+        <div><div class="l">RNG</div><div class="v">mt19937_64</div></div>
+        <div><div class="l">Parity</div><div class="v">Statistical</div></div>
+      </div>
+      <p>Output is statistically compatible with the Python reference but not bit-exact, because Python uses PCG64 and C++ uses Mersenne Twister. Episodes are written as CSV that downstream feature extraction consumes without modification. The Python simulator remains the reference; the C++ engine is the workhorse.</p>
+    </div>
+  </div>
+</aside>
+
+<!-- ======================== TOAST ======================== -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     SCRIPTS
+     ============================================================ -->
+<script>
+'use strict';
+
+/* ------------------------------------------------------------
+   CONFIG — easy edits for the user
+   ------------------------------------------------------------ */
+const CONFIG = {
+  tickerSymbols: [
+    ['NIFTY 50', '24,318.42', '+0.34%', 'up'],
+    ['BTC/USD',  '69,824.10', '-1.21%', 'down'],
+    ['ES1!',     '5,732.75',  '+0.18%', 'up'],
+    ['GC1!',     '2,419.30',  '+0.42%', 'up'],
+    ['VIX',      '14.83',     '-2.10%', 'down'],
+    ['SPX',      '5,729.84',  '+0.11%', 'up'],
+    ['DXY',      '104.22',    '-0.08%', 'down'],
+    ['CRUDE',    '78.41',     '+1.04%', 'up'],
+    ['EUR/USD',  '1.0843',    '+0.06%', 'up'],
+    ['JPY/USD',  '149.34',    '-0.22%', 'down'],
+    ['GOLD',     '2,418.90',  '+0.38%', 'up'],
+    ['SILVER',   '28.42',     '+0.91%', 'up'],
+  ],
+
+  scenarios: {
+    random: null, // resolves at runtime
+    wash: {
+      type: 'wash',
+      label: 'Wash Trading',
+      verdict: 'COLLUSION DETECTED',
+      eyebrow: 'Manipulation · Wash Trading',
+      headline: 'Coordinated cross-trades.',
+      headlineEm: 'CA → CB.',
+      confidence: 0.937,
+      windowsFlagged: 11,
+      windowsTotal: 19,
+      summary: 'Detector observed 11 of 19 windows above the 0.5 collusion threshold. Two-party trades between agents CA and CB occurred at near-perfect cadence with inflated volume — the hallmark of artificial-volume manipulation.',
+      featureSet: [
+        ['CA→CB Trade Count',       0.94],
+        ['Inter-trade CV',          0.81],
+        ['Volume vs Spread Ratio',  0.67],
+        ['Time-to-Execution',       0.52],
+        ['Cross-Trader Concentration', 0.41],
+      ],
+      evidenceCaption: 'Notice the regular cadence of CA-to-CB transactions inside the shaded window. The detector keys on the rhythm — not the prices — because price impact is intentionally muted.',
+    },
+    paint: {
+      type: 'paint',
+      label: 'Painting the Tape',
+      verdict: 'COLLUSION DETECTED',
+      eyebrow: 'Manipulation · Painting the Tape',
+      headline: 'Artificial price prints.',
+      headlineEm: 'mid-tracked.',
+      confidence: 0.882,
+      windowsFlagged: 9,
+      windowsTotal: 19,
+      summary: 'Detector saw a sequence of small, alternating buy/sell prints by CA and CB clustered tightly around the mid price. Inter-trade variance is unnaturally low — these prints exist to create the illusion of activity, not to transfer risk.',
+      featureSet: [
+        ['Inter-trade CV (low)',     0.91],
+        ['Price Deviation from Mid', 0.74],
+        ['Spectral Peak Power',      0.62],
+        ['CA/CB Trade Symmetry',     0.55],
+        ['Pattern Frequency',        0.39],
+      ],
+      evidenceCaption: 'The shaded window shows CA and CB alternating sides with identical lot sizes. The mid line barely moves — a fingerprint of synthetic volume.',
+    },
+    spoof: {
+      type: 'spoof',
+      label: 'Spoofing',
+      verdict: 'COLLUSION DETECTED',
+      eyebrow: 'Manipulation · Spoofing',
+      headline: 'Phantom orders.',
+      headlineEm: 'cancelled in unison.',
+      confidence: 0.942,
+      windowsFlagged: 13,
+      windowsTotal: 19,
+      summary: 'Detector identified large, layered limit orders by CA that were cancelled within sub-second windows of an execution by CB on the opposite side. This is the textbook spoofing pattern — fake intent used to move the mid in CB\'s favour.',
+      featureSet: [
+        ['CA Cancel Burst',          0.96],
+        ['Bid–Ask Imbalance Δ',      0.83],
+        ['Order Lifetime (short)',   0.71],
+        ['One-sided Depth Evap.',    0.64],
+        ['Phantom Volume Ratio',     0.48],
+      ],
+      evidenceCaption: 'The vertical spike just before the price drop is a CA cancellation cluster. CB\'s opposing trade — invisible without context — becomes obvious once the cancel pattern is overlaid.',
+    },
+    mirror: {
+      type: 'mirror',
+      label: 'Mirror Quoting',
+      verdict: 'COLLUSION DETECTED',
+      eyebrow: 'Manipulation · Mirror Quoting',
+      headline: 'Symmetric depth.',
+      headlineEm: 'pulled together.',
+      confidence: 0.901,
+      windowsFlagged: 10,
+      windowsTotal: 19,
+      summary: 'Detector saw CA and CB build matching ladders of resting limits on the same side, then cancel with sub-second sync. Same-side depth evaporates simultaneously — a classic price-marking and exit pattern.',
+      featureSet: [
+        ['Sync-Cancel Ratio',        0.93],
+        ['Same-side Depth Evap.',    0.78],
+        ['Symmetric Ladder Match',   0.69],
+        ['Cancel Lag (low)',         0.57],
+        ['Mirror Pattern Count',     0.45],
+      ],
+      evidenceCaption: 'CA and CB build mirrored ladders on the bid side, hold for 8 seconds, then both cancel within a 0.4-second window. The book hollows out symmetrically.',
+    },
+    none: {
+      type: 'none',
+      label: 'Market Clean',
+      verdict: 'MARKET CLEAN',
+      eyebrow: 'Verdict · Healthy market',
+      headline: 'No manipulation.',
+      headlineEm: 'detected.',
+      confidence: 0.892,
+      windowsFlagged: 0,
+      windowsTotal: 19,
+      summary: 'Detector classified all 19 windows as <em>none</em> with mean confidence 0.892. Trader activity is well-distributed, cancellation rates are within healthy ranges, and no agent pair shows coordinated behaviour. This is what a normal HFT day looks like.',
+      featureSet: [
+        ['Spread Profile (healthy)', 0.21],
+        ['Trader Diversity Index',   0.18],
+        ['Order-flow Entropy',       0.15],
+        ['Cancel Rate (normal)',     0.12],
+        ['Coordination Markers',     0.04],
+      ],
+      evidenceCaption: 'No shaded window — no scheme. The mid wanders organically and CA/CB orders are dispersed across price and time. The watchdog stays silent.',
+    },
+  },
+
+  schemes: [
+    {
+      key: 'wash', num: '01', name: 'Wash', em: 'Trading',
+      tagline: 'Round-trip · same name',
+      desc: 'Buying and selling the same instrument between coordinated parties to inflate apparent volume without changing economic exposure.',
+    },
+    {
+      key: 'paint', num: '02', name: 'Painting', em: 'the Tape',
+      tagline: 'Synthetic prints · low impact',
+      desc: 'A series of small, rhythmic trades between coordinated parties at or near the mid price — designed to manufacture the illusion of activity.',
+    },
+    {
+      key: 'spoof', num: '03', name: 'Spoofing', em: ' ',
+      tagline: 'Layered intent · pulled fast',
+      desc: 'Large limit orders placed without intent to fill, used to move the mid; the spoofer\'s confederate then trades the opposite side and the layers are cancelled.',
+    },
+    {
+      key: 'mirror', num: '04', name: 'Mirror', em: 'Quoting',
+      tagline: 'Symmetric depth · sync cancel',
+      desc: 'Two parties build matching ladders on the same side, hold briefly to mark the price, then cancel within a sub-second sync window.',
+    },
+  ],
+};
+
+/* ------------------------------------------------------------
+   THEME
+   ------------------------------------------------------------ */
+const themeKey = 'acd-theme';
+const html = document.documentElement;
+const stored = localStorage.getItem(themeKey);
+if (stored === 'light' || stored === 'dark') html.dataset.theme = stored;
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const cur = html.dataset.theme || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  html.dataset.theme = next;
+  localStorage.setItem(themeKey, next);
+  toast(next === 'dark' ? 'Theme · Night' : 'Theme · Day');
+});
+
+/* ------------------------------------------------------------
+   TICKER
+   ------------------------------------------------------------ */
+function buildTicker() {
+  const track = document.getElementById('tickerTrack');
+  const block = CONFIG.tickerSymbols.map(([sym, px, chg, dir]) =>
+    `<span><strong style="color: var(--text);">${sym}</strong>
+       <span style="color: var(--text-muted);">${px}</span>
+       <span class="${dir}">${chg}</span>
+       <span class="pip">·</span></span>`
+  ).join('');
+  // duplicate for seamless loop
+  track.innerHTML = block + block;
+}
+buildTicker();
+
+/* ------------------------------------------------------------
+   HERO MOCK FEED
+   ------------------------------------------------------------ */
+function buildHeroFeed() {
+  const feed = document.getElementById('heroFeed');
+  const lines = [
+    ['09:30:01.245', 'ORDER',  'CA',  'SELL',  '100.05', '87'],
+    ['09:30:01.298', 'ORDER',  'N3',  'BUY',   '100.04', '42'],
+    ['09:30:01.302', 'TRADE',  'CA',  '↔',     '100.05', '42'],
+    ['09:30:01.451', 'CANCEL', 'CA',  ' — ',   '15234',  ''],
+    ['09:30:02.012', 'ORDER',  'MM',  'BID',   ' 99.94', '80'],
+    ['09:30:02.087', 'ORDER',  'MM',  'ASK',   '100.04', '80'],
+    ['09:30:02.198', 'ORDER',  'CB',  'BUY',   '100.05', '64'],
+    ['09:30:02.242', 'ORDER',  'N7',  'SELL',  '100.06', '51'],
+    ['09:30:02.310', 'TRADE',  'CB',  '↔',     '100.05', '64'],
+    ['09:30:02.498', 'ORDER',  'N1',  'SELL',  '100.07', '23'],
+    ['09:30:02.612', 'ORDER',  'CA',  'BUY',   '100.04', '92'],
+    ['09:30:02.701', 'ORDER',  'N9',  'BUY',   '100.05', '17'],
+    ['09:30:02.834', 'CANCEL', 'CA',  ' — ',   '15239',  ''],
+    ['09:30:02.901', 'ORDER',  'N4',  'BUY',   '100.04', '38'],
+    ['09:30:03.012', 'ORDER',  'CB',  'SELL',  '100.06', '71'],
+  ];
+  feed.innerHTML = lines.map((l, i) => {
+    const tagClass = l[1] === 'TRADE' ? 't-buy'
+                   : l[1] === 'CANCEL' ? 't-cncl'
+                   : (l[3] === 'SELL' || l[3] === 'ASK') ? 't-sell' : 't-buy';
+    return `<div class="row" style="animation-delay: ${i * 80}ms">
+      <span class="ts">${l[0]}</span>
+      <span class="tag ${tagClass}">${l[1]}</span>
+      <span style="color: var(--text); width: 28px;">${l[2]}</span>
+      <span style="color: var(--text-muted); width: 36px;">${l[3]}</span>
+      <span style="color: var(--text); width: 56px; text-align: right;">${l[4]}</span>
+      <span style="color: var(--text-dim);">${l[5]}</span>
+    </div>`;
+  }).join('');
+}
+buildHeroFeed();
+
+/* ------------------------------------------------------------
+   SIMULATION STATE MACHINE
+   ------------------------------------------------------------ */
+const state = {
+  pipeline: 'idle',     // idle | trading | analyzing | result
+  scenario: 'random',
+  outcome: null,        // resolved scenario object
+  timerHandle: null,
+  feedHandle: null,
+  simTime: 0,
+  events: 0,
+};
+
+const elPipeline = document.getElementById('statePipeline');
+const elTime = document.getElementById('meterTime');
+const elEvents = document.getElementById('meterEvents');
+const elBtnInit = document.getElementById('btnInitiate');
+const elBtnInitLabel = document.getElementById('btnInitiateLabel');
+const elStageIdle = document.getElementById('stageIdle');
+const elStageTrading = document.getElementById('stageTrading');
+const elStageAnalyzing = document.getElementById('stageAnalyzing');
+const elStageResult = document.getElementById('stageResult');
+const elOutputHeadLabel = document.getElementById('outputHeadLabel');
+const elOutputLivePip = document.getElementById('outputLivePip');
+
+function setPipelineStep(active, dones) {
+  document.querySelectorAll('.state-step').forEach(el => {
+    el.classList.remove('active', 'done');
+    const k = el.dataset.step;
+    if (dones && dones.includes(k)) el.classList.add('done');
+    if (k === active) el.classList.add('active');
+  });
+}
+
+function setStage(name) {
+  [elStageIdle, elStageTrading, elStageAnalyzing, elStageResult]
+    .forEach(el => el.classList.remove('active'));
+  ({
+    idle:      () => elStageIdle.classList.add('active'),
+    trading:   () => elStageTrading.classList.add('active'),
+    analyzing: () => elStageAnalyzing.classList.add('active'),
+    result:    () => elStageResult.classList.add('active'),
+  })[name]();
+}
+
+function pickScenario() {
+  if (state.scenario === 'random') {
+    // Weighted: 60% one of the four collusion types, 40% clean
+    const r = Math.random();
+    if (r < 0.4) return CONFIG.scenarios.none;
+    const types = ['wash', 'paint', 'spoof', 'mirror'];
+    return CONFIG.scenarios[types[Math.floor(Math.random() * types.length)]];
+  }
+  return CONFIG.scenarios[state.scenario];
+}
+
+document.getElementById('scenarioGrid').addEventListener('click', (e) => {
+  const chip = e.target.closest('.scenario-chip');
+  if (!chip) return;
+  document.querySelectorAll('.scenario-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  state.scenario = chip.dataset.scenario;
+});
+
+elBtnInit.addEventListener('click', () => {
+  if (state.pipeline === 'trading' || state.pipeline === 'analyzing') return;
+  startTrading();
+});
+
+function startTrading() {
+  // pick now so we know the outcome ahead of time
+  state.outcome = pickScenario();
+  state.pipeline = 'trading';
+  state.simTime = 0;
+  state.events = 0;
+
+  setStage('trading');
+  setPipelineStep('trading', ['idle']);
+  elOutputHeadLabel.textContent = '/dev/lob — Trading Floor (LIVE)';
+  elOutputLivePip.classList.add('is-live');
+  elOutputLivePip.querySelector('span:last-child').textContent = 'Live';
+  elBtnInit.disabled = true;
+  elBtnInitLabel.textContent = 'Trading…';
+  document.documentElement.removeAttribute('data-result');
+
+  // Start the order tape
+  elStageTrading.innerHTML = '';
+  let line = 0;
+  const TRADING_LINES_PER_TICK = 4;
+  const TRADING_MS = 25; // sim speed
+  const TRADING_DURATION_MS = 5500; // total trading phase
+
+  state.feedHandle = setInterval(() => {
+    for (let i = 0; i < TRADING_LINES_PER_TICK; i++) {
+      const row = makeFeedRow(state.simTime, state.outcome.type);
+      elStageTrading.appendChild(row);
+      state.events += 1;
+      // keep DOM size manageable
+      if (elStageTrading.children.length > 80) {
+        elStageTrading.removeChild(elStageTrading.firstChild);
+      }
+      state.simTime += 0.1;
+    }
+    elTime.textContent = state.simTime.toFixed(1) + 's';
+    elEvents.textContent = state.events.toLocaleString();
+    line += 1;
+  }, TRADING_MS);
+
+  state.timerHandle = setTimeout(() => {
+    clearInterval(state.feedHandle);
+    startAnalyzing();
+  }, TRADING_DURATION_MS);
+}
+
+function startAnalyzing() {
+  state.pipeline = 'analyzing';
+  setStage('analyzing');
+  setPipelineStep('analyzing', ['idle', 'trading']);
+  elOutputHeadLabel.textContent = '/dev/lob — Detector Scanning';
+  elOutputLivePip.querySelector('span:last-child').textContent = 'Scanning';
+
+  // generate a scanner trace path appropriate to the scenario
+  const path = makeScannerPath(state.outcome.type);
+  document.querySelector('#scannerTrace path').setAttribute('d', path);
+
+  setTimeout(() => revealResult(), 2400);
+}
+
+function revealResult() {
+  state.pipeline = 'result';
+  setStage('result');
+  setPipelineStep('result', ['idle', 'trading', 'analyzing', 'result']);
+  elOutputLivePip.classList.remove('is-live');
+  elOutputLivePip.querySelector('span:last-child').textContent = 'Verdict ready';
+  elOutputHeadLabel.textContent = '/dev/lob — Verdict';
+  elBtnInit.disabled = false;
+  elBtnInitLabel.textContent = 'Run Again';
+
+  const o = state.outcome;
+  const isCollusion = o.type !== 'none';
+  const cls = isCollusion ? 'r-collusion' : 'r-clean';
+
+  // page-level palette shift
+  document.documentElement.dataset.result = isCollusion ? 'collusion' : 'clean';
+
+  // populate
+  elStageResult.classList.remove('r-collusion', 'r-clean');
+  elStageResult.classList.add(cls);
+  document.getElementById('resultEyebrow').className = 'result-eyebrow ' + cls;
+  document.getElementById('resultEyebrow').textContent = o.eyebrow;
+  const headlineEl = document.getElementById('resultHeadline');
+  headlineEl.className = 'result-headline ' + cls;
+  headlineEl.innerHTML = `${o.headline} <span class="em">${o.headlineEm}</span>`;
+  document.getElementById('resultClass').textContent = o.label.toUpperCase();
+  document.getElementById('resultClass').className = 'v ' + cls;
+  document.getElementById('resultConfidence').textContent = (o.confidence * 100).toFixed(1) + '%';
+  document.getElementById('resultWindows').textContent = `${o.windowsFlagged} / ${o.windowsTotal}`;
+
+  document.getElementById('resultSummary').innerHTML = o.summary;
+
+  // animate confidence fill
+  const fill = document.getElementById('confidenceFill');
+  fill.style.width = '0%';
+  requestAnimationFrame(() => {
+    fill.style.width = (o.confidence * 100).toFixed(1) + '%';
+  });
+
+  // also populate the analysis section
+  populateFeatureList(o);
+  drawEvidenceChart(o);
+  document.getElementById('evidenceCaption').innerHTML = `<span class="em">Reading.</span> ${o.evidenceCaption}`;
+  document.getElementById('evidencePanelTag').textContent = `Episode · ${o.label}`;
+}
+
+document.getElementById('btnRerun').addEventListener('click', () => {
+  document.documentElement.removeAttribute('data-result');
+  setStage('idle');
+  setPipelineStep('idle', []);
+  elBtnInitLabel.textContent = 'Initiate';
+  state.pipeline = 'idle';
+  // scroll to controls
+  document.getElementById('demo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+document.getElementById('btnExportSummary').addEventListener('click', () => {
+  if (!state.outcome) return;
+  const o = state.outcome;
+  const txt =
+`Algo·Collusion Detector — Verdict
+${o.verdict}
+Class:        ${o.label}
+Confidence:   ${(o.confidence*100).toFixed(1)}%
+Windows:      ${o.windowsFlagged}/${o.windowsTotal} flagged
+Top features: ${o.featureSet.map(f => f[0]).slice(0,3).join(' · ')}
+`;
+  navigator.clipboard?.writeText(txt).then(
+    () => toast('Verdict copied to clipboard'),
+    () => toast('Copy failed — clipboard blocked')
+  );
+});
+
+/* ------------------------------------------------------------
+   FEED ROW GENERATOR (for the scrolling tape)
+   ------------------------------------------------------------ */
+const TRADERS = ['N0','N1','N2','N3','N5','N7','N9','N11','MM'];
+function makeFeedRow(t, scenarioType) {
+  // bias towards CA/CB activity inside the "scheme window" period
+  const ts = (t).toFixed(3);
+  const inWindow = scenarioType !== 'none' && t > 1.5 && t < 4.0;
+  const useBot = inWindow && Math.random() < 0.55;
+  const trader = useBot ? (Math.random() < 0.5 ? 'CA' : 'CB') : TRADERS[(Math.random() * TRADERS.length) | 0];
+
+  const r = Math.random();
+  let kind, side, px, qty, meta;
+
+  // scheme-flavoured patterns
+  if (useBot && scenarioType === 'spoof' && r < 0.55) {
+    // spoof: CA places lots of limits then cancels, CB market-orders
+    kind = trader === 'CA' ? (Math.random() < 0.5 ? 'ORDER' : 'CANCEL') : 'ORDER';
+    side = 'BUY';
+    px = (99.92 + Math.random() * 0.16).toFixed(2);
+    qty = (40 + (Math.random() * 80) | 0);
+    meta = kind === 'CANCEL' ? `oid=${(15000 + Math.random()*999)|0}` : 'limit';
+  } else if (useBot && scenarioType === 'wash' && r < 0.55) {
+    kind = Math.random() < 0.5 ? 'ORDER' : 'TRADE';
+    side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+    px = (100.00 + (Math.random()-0.5) * 0.10).toFixed(2);
+    qty = (50 + Math.random() * 100) | 0;
+    meta = kind === 'TRADE' ? 'CA↔CB' : 'limit';
+  } else if (useBot && scenarioType === 'paint' && r < 0.55) {
+    kind = 'ORDER';
+    side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+    px = (100.00 + (Math.random()-0.5) * 0.04).toFixed(2);  // tight to mid
+    qty = (10 + Math.random() * 80) | 0;
+    meta = 'limit';
+  } else if (useBot && scenarioType === 'mirror' && r < 0.55) {
+    kind = Math.random() < 0.4 ? 'CANCEL' : 'ORDER';
+    side = 'BUY';  // mirror builds same side
+    px = (99.94 + Math.random() * 0.06).toFixed(2);
+    qty = (30 + Math.random() * 50) | 0;
+    meta = kind === 'CANCEL' ? `oid=${(15000 + Math.random()*999)|0}` : 'limit';
+  } else {
+    // generic noise activity
+    if (r < 0.55) { kind = 'ORDER'; }
+    else if (r < 0.85) { kind = 'TRADE'; }
+    else { kind = 'CANCEL'; }
+    side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+    px = (99.95 + Math.random() * 0.12).toFixed(2);
+    qty = (10 + Math.random() * 90) | 0;
+    meta = kind === 'CANCEL' ? `oid=${(15000 + Math.random()*999)|0}` : (kind === 'TRADE' ? 'taker' : 'limit');
+  }
+
+  const isBot = (trader === 'CA' || trader === 'CB');
+  const tagClass = kind === 'TRADE' ? 't-trade' : kind === 'CANCEL' ? 't-cncl' : 't-order';
+  const sideClass = side === 'BUY' ? 'side-buy' : 'side-sell';
+
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  row.innerHTML =
+    `<span class="ts">${ts}s</span>` +
+    `<span class="tag ${tagClass}">${kind}</span>` +
+    `<span class="actor ${isBot ? 'bot' : ''}">${trader}</span>` +
+    `<span class="${sideClass}">${side}</span>` +
+    `<span class="px">${px}</span>` +
+    `<span class="qty">${qty} <span class="meta">${meta}</span></span>`;
+  return row;
+}
+
+/* ------------------------------------------------------------
+   SCANNER TRACE
+   ------------------------------------------------------------ */
+function makeScannerPath(type) {
+  const W = 480, H = 132;
+  const points = [];
+  const N = 50;
+  const seedNoise = (i) => Math.sin(i * 1.7 + (type.length * 13)) * 0.5 + Math.cos(i * 0.9) * 0.3;
+  for (let i = 0; i < N; i++) {
+    const x = (i / (N - 1)) * W;
+    let y = H / 2;
+    if (type === 'spoof' && i > N * 0.55 && i < N * 0.7) y -= 28; // sudden cancel spike
+    if (type === 'wash')  y += Math.sin(i * 0.6) * 4;
+    if (type === 'paint') y += Math.sin(i * 1.2) * 2;
+    if (type === 'mirror' && i > N * 0.5 && i < N * 0.7) y -= 18;
+    y += seedNoise(i) * 6;
+    points.push([x, y]);
+  }
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+}
+
+/* ------------------------------------------------------------
+   FEATURE LIST
+   ------------------------------------------------------------ */
+function populateFeatureList(o) {
+  const list = document.getElementById('featureList');
+  list.innerHTML = o.featureSet.map(([name, score], i) => `
+    <div class="feature-row">
+      <span class="num">0${i+1}</span>
+      <div class="body">
+        <div class="name"><span>${name}</span><span class="v">${score.toFixed(2)}</span></div>
+        <div class="feature-bar"><div class="fill" data-score="${score}"></div></div>
+      </div>
+    </div>
+  `).join('');
+  requestAnimationFrame(() => {
+    list.querySelectorAll('.feature-bar .fill').forEach((el, i) => {
+      setTimeout(() => {
+        el.style.width = (parseFloat(el.dataset.score) * 100).toFixed(1) + '%';
+      }, 80 + i * 90);
+    });
+  });
+}
+
+/* ------------------------------------------------------------
+   EVIDENCE CHART (SVG, scenario-dependent)
+   ------------------------------------------------------------ */
+function drawEvidenceChart(o) {
+  const W = 720, H = 300;
+  const svg = document.getElementById('evidenceChart');
+  svg.innerHTML = '';
+
+  // background grid
+  const grid = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  grid.setAttribute('opacity', '0.4');
+  for (let i = 1; i < 6; i++) {
+    const y = (i / 6) * H;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', 0); line.setAttribute('x2', W);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'var(--border-soft)');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '2,3');
+    grid.appendChild(line);
+  }
+  svg.appendChild(grid);
+
+  // mid-price line (some random walk)
+  const N = 240;
+  let price = H / 2;
+  const prices = [];
+  let seed = (o.type.charCodeAt(0) || 1) * 17;
+  function rand() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+  for (let i = 0; i < N; i++) {
+    let dp = (rand() - 0.5) * 4;
+    // scheme-driven price moves
+    if (o.type === 'spoof' && i > N * 0.5 && i < N * 0.6) dp -= 1.0;
+    if (o.type === 'mirror' && i > N * 0.5 && i < N * 0.65) dp -= 0.4;
+    if (o.type === 'wash' || o.type === 'paint') dp *= 0.5; // muted
+    price += dp;
+    price = Math.max(40, Math.min(H - 40, price));
+    prices.push(price);
+  }
+  const pricePath = prices.map((p, i) => {
+    const x = (i / (N - 1)) * W;
+    return (i === 0 ? 'M' : 'L') + `${x.toFixed(1)},${p.toFixed(1)}`;
+  }).join(' ');
+  const priceLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  priceLine.setAttribute('d', pricePath);
+  priceLine.setAttribute('stroke', 'var(--text-muted)');
+  priceLine.setAttribute('stroke-width', '1.2');
+  priceLine.setAttribute('fill', 'none');
+  priceLine.setAttribute('opacity', '0.7');
+  svg.appendChild(priceLine);
+
+  // shaded scheme window
+  if (o.type !== 'none') {
+    const w0 = N * 0.40;
+    const w1 = N * 0.72;
+    const wx0 = (w0 / (N-1)) * W;
+    const wx1 = (w1 / (N-1)) * W;
+    const winRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    winRect.setAttribute('x', wx0);
+    winRect.setAttribute('y', 0);
+    winRect.setAttribute('width', wx1 - wx0);
+    winRect.setAttribute('height', H);
+    winRect.setAttribute('fill', 'var(--red)');
+    winRect.setAttribute('opacity', '0.06');
+    svg.appendChild(winRect);
+
+    // window edges
+    [wx0, wx1].forEach(x => {
+      const edge = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      edge.setAttribute('x1', x); edge.setAttribute('x2', x);
+      edge.setAttribute('y1', 0); edge.setAttribute('y2', H);
+      edge.setAttribute('stroke', 'var(--red)');
+      edge.setAttribute('stroke-width', '1');
+      edge.setAttribute('stroke-dasharray', '4,4');
+      edge.setAttribute('opacity', '0.5');
+      svg.appendChild(edge);
+    });
+  }
+
+  // CA/CB markers
+  const markersG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const numMarkers = o.type === 'none' ? 18 : 36;
+  for (let i = 0; i < numMarkers; i++) {
+    const inWindow = o.type !== 'none' && i > numMarkers * 0.30 && i < numMarkers * 0.70;
+    const isCA = (i % 2 === 0);
+    const x = (i / numMarkers) * W + rand() * 8;
+    const y = inWindow
+      ? (H / 2 + (rand() - 0.5) * (o.type === 'paint' ? 14 : 60))
+      : (H / 2 + (rand() - 0.5) * 100);
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', x);
+    c.setAttribute('cy', y);
+    c.setAttribute('r', 2.6);
+    c.setAttribute('fill', isCA ? 'var(--gold)' : 'var(--gold-deep)');
+    c.setAttribute('opacity', inWindow ? 0.95 : 0.45);
+    markersG.appendChild(c);
+  }
+  svg.appendChild(markersG);
+
+  // annotation
+  if (o.type === 'spoof') {
+    const ann = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const ax = W * 0.55, ay = H * 0.30;
+    ann.innerHTML =
+      `<line x1="${ax}" y1="${ay}" x2="${ax-30}" y2="${ay-22}" stroke="var(--gold)" stroke-width="1"/>
+       <text x="${ax-32}" y="${ay-26}" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="var(--gold)" letter-spacing="1.2">CANCEL BURST</text>`;
+    svg.appendChild(ann);
+  } else if (o.type === 'wash' || o.type === 'paint') {
+    const ann = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const ax = W * 0.55, ay = H * 0.45;
+    ann.innerHTML =
+      `<text x="${ax}" y="${ay - 8}" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--gold)" letter-spacing="1.2">${o.type === 'wash' ? 'CA↔CB ROUND-TRIPS' : 'TIGHT MID PRINTS'}</text>`;
+    svg.appendChild(ann);
+  } else if (o.type === 'mirror') {
+    const ann = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const ax = W * 0.55;
+    ann.innerHTML =
+      `<text x="${ax}" y="${H * 0.30}" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--gold)" letter-spacing="1.2">SYNC CANCEL</text>`;
+    svg.appendChild(ann);
+  }
+}
+
+/* ------------------------------------------------------------
+   SCHEMES SECTION
+   ------------------------------------------------------------ */
+function buildSchemes() {
+  const grid = document.getElementById('schemesGrid');
+  grid.innerHTML = CONFIG.schemes.map(s => `
+    <article class="scheme-card" data-scheme="${s.key}" tabindex="0">
+      <div class="num">${s.num} / ${s.tagline.split(' · ')[0].toUpperCase()}</div>
+      <div class="name">${s.name} <span class="em">${s.em}</span></div>
+      <div class="tagline">${s.tagline}</div>
+      <div class="desc">${s.desc}</div>
+      <div class="viz">${schemeViz(s.key)}</div>
+    </article>
+  `).join('');
+
+  // clicking a card runs that scenario
+  grid.querySelectorAll('.scheme-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const key = card.dataset.scheme;
+      // pick the scenario chip
+      document.querySelectorAll('.scenario-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.scenario === key);
+      });
+      state.scenario = key;
+      document.getElementById('demo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => startTrading(), 600);
+    });
+  });
+}
+
+function schemeViz(key) {
+  // small SVG vignettes — visual abstractions of each scheme
+  const W = 280, H = 60;
+  if (key === 'wash') {
+    // alternating gold dots high/low
+    let dots = '';
+    for (let i = 0; i < 14; i++) {
+      const x = (i / 13) * W;
+      const y = i % 2 === 0 ? 18 : 42;
+      dots += `<circle cx="${x}" cy="${y}" r="3" fill="var(--gold)" opacity="${0.5 + (i%2)*0.4}"/>`;
+      if (i > 0) dots += `<line x1="${(i-1)/13*W}" y1="${(i-1)%2===0?18:42}" x2="${x}" y2="${y}" stroke="var(--gold-deep)" stroke-width="0.6" opacity="0.5"/>`;
+    }
+    return `<svg viewBox="0 0 ${W} ${H}">${dots}</svg>`;
+  }
+  if (key === 'paint') {
+    // tight cluster around the middle
+    let dots = '';
+    for (let i = 0; i < 24; i++) {
+      const x = (i / 23) * W;
+      const y = 30 + (Math.sin(i * 1.8) * 4) + ((i*7)%5 - 2);
+      dots += `<circle cx="${x}" cy="${y}" r="2.4" fill="var(--gold)" opacity="0.85"/>`;
+    }
+    dots += `<line x1="0" y1="30" x2="${W}" y2="30" stroke="var(--text-muted)" stroke-dasharray="2,3" opacity="0.5"/>`;
+    return `<svg viewBox="0 0 ${W} ${H}">${dots}</svg>`;
+  }
+  if (key === 'spoof') {
+    // tall bars (orders) then disappear
+    let bars = '';
+    for (let i = 0; i < 8; i++) {
+      const x = (i / 7) * (W * 0.65);
+      const tall = i < 5;
+      const h = tall ? 36 : 6;
+      bars += `<rect x="${x}" y="${50 - h}" width="6" height="${h}" fill="var(--gold)" opacity="${tall ? 0.7 : 0.3}"/>`;
+    }
+    bars += `<text x="${W * 0.72}" y="34" font-family="IBM Plex Mono" font-size="10" fill="var(--gold)" letter-spacing="1.5">CANCEL ✕</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}">${bars}</svg>`;
+  }
+  if (key === 'mirror') {
+    // two ladders, one shadows the other
+    let bars = '';
+    for (let i = 0; i < 5; i++) {
+      const y = 14 + i * 8;
+      const w1 = 50 + i * 10;
+      bars += `<rect x="20" y="${y}" width="${w1}" height="3" fill="var(--gold)" opacity="0.85"/>`;
+      bars += `<rect x="${20 + w1 + 14}" y="${y}" width="${w1}" height="3" fill="var(--gold-deep)" opacity="0.85"/>`;
+    }
+    bars += `<text x="${W/2}" y="58" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--text-muted)" letter-spacing="1.2">MIRRORED LADDERS</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}">${bars}</svg>`;
+  }
+  return '';
+}
+buildSchemes();
+
+/* ------------------------------------------------------------
+   TRAINING CURVES (drawer)
+   ------------------------------------------------------------ */
+function drawCurveChart() {
+  const W = 600, H = 220;
+  const svg = document.getElementById('curveChart');
+  if (!svg) return;
+  // synthetic data from the actual training trace shape (rises then plateaus around 6.5)
+  const N = 120;
+  const A = [], B = [];
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    const baseA = -8 + 14.5 * (1 - Math.exp(-t * 3.2)); // climbs to ~6.5
+    const baseB = -10 + 15 * (1 - Math.exp(-t * 2.6)); // climbs to ~5
+    const noiseA = (Math.sin(i * 0.6) + Math.cos(i * 0.27)) * 0.6;
+    const noiseB = (Math.sin(i * 0.5 + 0.4) + Math.cos(i * 0.31)) * 0.7;
+    A.push(baseA + noiseA);
+    B.push(baseB + noiseB);
+  }
+  const yMin = -12, yMax = 10;
+  const xOf = (i) => 40 + (i / (N - 1)) * (W - 60);
+  const yOf = (v) => H - 30 - ((v - yMin) / (yMax - yMin)) * (H - 60);
+  const pathOf = arr => arr.map((v, i) => (i === 0 ? 'M' : 'L') + `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
+
+  const grid = (() => {
+    let g = '';
+    for (let v = yMin; v <= yMax; v += 4) {
+      const y = yOf(v);
+      g += `<line x1="40" x2="${W-20}" y1="${y}" y2="${y}" stroke="var(--border-soft)" stroke-dasharray="2,3" opacity="0.5"/>`;
+      g += `<text x="32" y="${y+3}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="var(--text-dim)">${v}</text>`;
+    }
+    return g;
+  })();
+
+  // zero baseline
+  const zero = `<line x1="40" x2="${W-20}" y1="${yOf(0)}" y2="${yOf(0)}" stroke="var(--text-muted)" stroke-width="1" opacity="0.5"/>`;
+
+  svg.innerHTML = `
+    ${grid}
+    ${zero}
+    <path d="${pathOf(B)}" stroke="var(--gold-deep)" stroke-width="1.4" fill="none" opacity="0.9"/>
+    <path d="${pathOf(A)}" stroke="var(--gold)" stroke-width="1.4" fill="none"/>
+    <text x="${W-22}" y="${yOf(A[A.length-1])-6}" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="var(--gold)">Agent A</text>
+    <text x="${W-22}" y="${yOf(B[B.length-1])+12}" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="var(--gold-deep)">Agent B</text>
+    <text x="40" y="${H-10}" font-family="IBM Plex Mono" font-size="9" fill="var(--text-dim)" letter-spacing="1.2">ITERATION →</text>
+    <text x="${W-22}" y="${H-10}" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="var(--text-dim)" letter-spacing="1.2">Eval reward</text>
+  `;
+}
+
+/* ------------------------------------------------------------
+   DRAWER
+   ------------------------------------------------------------ */
+const drawer = document.getElementById('drawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+function openDrawer(tab) {
+  drawer.classList.add('open');
+  drawerBackdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  if (tab) selectTab(tab);
+  drawCurveChart();
+}
+function closeDrawer() {
+  drawer.classList.remove('open');
+  drawerBackdrop.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+}
+document.getElementById('fab').addEventListener('click', () => openDrawer());
+document.getElementById('btnDrawer').addEventListener('click', () => openDrawer());
+document.getElementById('ctaArch').addEventListener('click', () => {
+  document.getElementById('arch').scrollIntoView({ behavior: 'smooth' });
+});
+document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+drawerBackdrop.addEventListener('click', closeDrawer);
+
+document.querySelectorAll('.drawer-tab').forEach(tab => {
+  tab.addEventListener('click', () => selectTab(tab.dataset.tab));
+});
+function selectTab(key) {
+  document.querySelectorAll('.drawer-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === key));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + key));
+  if (key === 'rl') drawCurveChart();
+}
+
+/* ------------------------------------------------------------
+   CTA — initiate from hero scrolls + starts
+   ------------------------------------------------------------ */
+document.getElementById('ctaStart').addEventListener('click', () => {
+  document.getElementById('demo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => {
+    if (state.pipeline === 'idle' || state.pipeline === 'result') startTrading();
+  }, 600);
+});
+
+/* ------------------------------------------------------------
+   TOAST
+   ------------------------------------------------------------ */
+let toastTimer = null;
+function toast(text) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/* ------------------------------------------------------------
+   KEYBOARD SHORTCUTS
+   ------------------------------------------------------------ */
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 't' || e.key === 'T') {
+    document.getElementById('themeToggle').click();
+  } else if (e.key === ' ' || e.key === 'Enter') {
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
+    if (state.pipeline === 'idle' || state.pipeline === 'result') {
+      e.preventDefault();
+      startTrading();
+    }
+  } else if (e.key === 'Escape') {
+    closeDrawer();
+  } else if (e.key === 'a' || e.key === 'A') {
+    openDrawer();
+  }
+});
+
+/* ------------------------------------------------------------
+   SCROLL REVEAL — fade things in as they enter view
+   ------------------------------------------------------------ */
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+      io.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -10% 0px' });
+
+document.querySelectorAll('section.work, .arch-block, .scheme-card, .panel').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(16px)';
+  el.style.transition = 'opacity 800ms ease, transform 800ms cubic-bezier(0.22, 1, 0.36, 1)';
+  io.observe(el);
+});
+
+/* ------------------------------------------------------------
+   INITIAL — show idle state, prepare a placeholder analysis
+   ------------------------------------------------------------ */
+(function init() {
+  setStage('idle');
+  setPipelineStep('idle', []);
+  // populate analysis with a "preview" using the clean scenario
+  populateFeatureList(CONFIG.scenarios.none);
+  drawEvidenceChart(CONFIG.scenarios.none);
+  document.getElementById('evidenceCaption').innerHTML =
+    `<span class="em">Preview.</span> Run a simulation to populate this view with a real verdict and the features that drove it.`;
+})();
+</script>
+</body>
+</html>

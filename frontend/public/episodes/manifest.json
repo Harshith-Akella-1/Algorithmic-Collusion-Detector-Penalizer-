@@ -1,0 +1,72 @@
+{
+  "none": [
+    {
+      "id": "ep_00000",
+      "file": "ep_00000.json",
+      "prediction": "paint",
+      "confidence": 0.664
+    },
+    {
+      "id": "ep_00050",
+      "file": "ep_00050.json",
+      "prediction": "paint",
+      "confidence": 0.668
+    }
+  ],
+  "wash": [
+    {
+      "id": "ep_01000",
+      "file": "ep_01000.json",
+      "prediction": "wash",
+      "confidence": 0.967
+    },
+    {
+      "id": "ep_01050",
+      "file": "ep_01050.json",
+      "prediction": "wash",
+      "confidence": 0.87
+    }
+  ],
+  "paint": [
+    {
+      "id": "ep_02000",
+      "file": "ep_02000.json",
+      "prediction": "paint",
+      "confidence": 0.879
+    },
+    {
+      "id": "ep_02050",
+      "file": "ep_02050.json",
+      "prediction": "paint",
+      "confidence": 0.924
+    }
+  ],
+  "spoof": [
+    {
+      "id": "ep_03000",
+      "file": "ep_03000.json",
+      "prediction": "spoof",
+      "confidence": 0.996
+    },
+    {
+      "id": "ep_03050",
+      "file": "ep_03050.json",
+      "prediction": "spoof",
+      "confidence": 0.933
+    }
+  ],
+  "mirror": [
+    {
+      "id": "ep_04000",
+      "file": "ep_04000.json",
+      "prediction": "mirror",
+      "confidence": 0.943
+    },
+    {
+      "id": "ep_04050",
+      "file": "ep_04050.json",
+      "prediction": "mirror",
+      "confidence": 0.99
+    }
+  ]
+}
